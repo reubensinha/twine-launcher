@@ -1,0 +1,49 @@
+/* ── Theme defaults (overridden at runtime from /api/v1/themes/active) ─────── */
+:root {
+  --bg:          #000000;
+  --surface:     #0d0d0d;
+  --surface2:    #161616;
+  --border:      #222222;
+  --text:        #ffffff;
+  --text-muted:  #888888;
+  --accent:      #ffffff;
+  --accent-text: #000000;
+
+  /* Structural tokens — not theme-overridable */
+  --font-body:   'EB Garamond', Georgia, 'Times New Roman', serif;
+  --font-ui:     'DM Sans', system-ui, sans-serif;
+  --font-mono:   'DM Mono', 'Courier New', monospace;
+  --radius:      3px;
+  --radius-lg:   6px;
+  --transition:  140ms ease;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, select, textarea { font-family: inherit; font-size: inherit; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes pulse    { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+.fade-up { animation: fadeUp 0.35s ease both; }

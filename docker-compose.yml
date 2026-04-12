@@ -1,0 +1,16 @@
+services:
+  twine-launcher:
+    build: .
+    container_name: twine-launcher
+    restart: unless-stopped
+    ports:
+      - "8080:8000"       # Change 8080 to your preferred host port
+    volumes:
+      - ./games:/games    # Drop compiled Twine HTML files here
+      - ./data:/data      # SQLite DB and persistent data
+    environment:
+      # Generate a strong random key for production:
+      #   python -c "import secrets; print(secrets.token_hex(32))"
+      TWINE_SECRET_KEY: "change-me-in-production"
+      TWINE_DATABASE_URL: "sqlite:////data/twine_launcher.db"
+      TWINE_GAMES_DIR: "/games"

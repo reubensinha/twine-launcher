@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { themeApi } from '../api';
 import { useAuthStore } from '../store/auth';
-import { useThemeStore, type BuiltinTheme } from '../store/theme';
+import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
 import { Button, Toast } from '../components/ui';
 
 export function SettingsPage() {
@@ -186,12 +186,12 @@ interface ThemePickerProps {
   fileRef: React.RefObject<HTMLInputElement>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   currentSource: string;
-  currentTheme: Record<string, string> | null;
+  currentTheme: ThemeData | null;
   scope: 'user' | 'global';
 }
 
 function ThemePicker({ builtins, saving, onSelectBuiltin, onUploadCustom, onReset, fileRef, onFileChange, currentSource, currentTheme, scope }: ThemePickerProps) {
-  const isActive = (id: string) => scope === 'user' ? currentSource === 'user' && (currentTheme as Record<string, string> | null)?.[`name`] === builtins.find(b => b.id === id)?.name : currentSource === 'global' && (currentTheme as Record<string, string> | null)?.[`name`] === builtins.find(b => b.id === id)?.name;
+  const isActive = (id: string) => scope === 'user' ? currentSource === 'user' && currentTheme?.name === builtins.find(b => b.id === id)?.name : currentSource === 'global' && currentTheme?.name === builtins.find(b => b.id === id)?.name;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

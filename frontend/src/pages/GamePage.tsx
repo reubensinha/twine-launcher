@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { games as gamesApi, sessions as sessionsApi, getToken } from '../api';
+import { games as gamesApi, getToken } from '../api';
 import { Spinner } from '../components/ui';
 
 const POLL_MS = 3000;

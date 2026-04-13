@@ -51,8 +51,9 @@ function buildHeaders(options: RequestInit): Record<string, string> {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...options, headers: buildHeaders(options) });
 
-  // Silent refresh: if we get a 401 on a non-auth endpoint, try refreshing once.
-  if (res.status === 401 && !path.startsWith('/auth/')) {
+  // Silent refresh: if we get a 401, try refreshing once.
+  // Only exclude /auth/refresh itself to avoid infinite loops.
+  if (res.status === 401 && path !== '/auth/refresh') {
     const refreshed = await tryRefresh();
     if (refreshed) {
       // Retry with the new token.

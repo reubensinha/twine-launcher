@@ -51,10 +51,15 @@ def main() -> None:
             sys.stderr = open(os.devnull, "w")
 
     # ── Import and run uvicorn AFTER env vars are set ──────────────────────────
+    # Use the direct import form (not the "module:attr" string form) so that
+    # PyInstaller's static analysis can trace and bundle the entire backend
+    # package.  The string form uses importlib at runtime, which PyInstaller
+    # cannot follow, resulting in ModuleNotFoundError when frozen.
     import uvicorn  # noqa: PLC0415
+    from backend.app.main import app  # noqa: PLC0415
 
     uvicorn.run(
-        "backend.app.main:app",
+        app,
         host=args.host,
         port=args.port,
         log_level="warning",

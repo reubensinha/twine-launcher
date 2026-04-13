@@ -43,5 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     clearToken();
     set({ user: null });
+    // Clear the server-side HttpOnly cookie (can't be deleted from JS directly).
+    authApi.logout().catch(() => {});
   },
 }));

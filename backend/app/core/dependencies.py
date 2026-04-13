@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import User, get_session
-from backend.app.core.security import decode_access_token
+from backend.app.core.security import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -19,15 +19,19 @@ def get_current_user(
     session: Annotated[Session, Depends(get_session)],
 ) -> User:
     """
-    Decode the JWT token and return the authenticated User.
-    Raises 401 if the token is missing, invalid, or the user no longer exists.
+    Decode the JWT access token from the Authorization header and return the User.
+    Raises 401 if the token is missing, invalid, expired, or the user no longer exists.
+
+    Desktop app restarts (new port → lost localStorage) are handled by the frontend's
+    silent-refresh interceptor, which calls POST /auth/refresh with the HttpOnly
+    refresh cookie before retrying any failed request.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    payload = decode_access_token(token)
+    payload = decode_token(token, "access")
     if not payload:
         raise credentials_exception
 
@@ -39,10 +43,7 @@ def get_current_user(
 
 
 def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    """
-    Dependency that additionally requires the admin role.
-    Raises 403 if the user is not an admin.
-    """
+    """Dependency that additionally requires the admin role."""
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -21,15 +21,49 @@ export function getToken(): string | null { return localStorage.getItem('twine_a
 export function setToken(t: string): void  { localStorage.setItem('twine_access_token', t); }
 export function clearToken(): void         { localStorage.removeItem('twine_access_token'); }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// Singleton promise to deduplicate concurrent 401 → refresh races.
+let _refreshing: Promise<boolean> | null = null;
+
+function tryRefresh(): Promise<boolean> {
+  if (!_refreshing) {
+    _refreshing = fetch(`${BASE}/auth/refresh`, { method: 'POST' })
+      .then(async res => {
+        if (!res.ok) return false;
+        setToken((await res.json()).access_token);
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => { _refreshing = null; });
+  }
+  return _refreshing;
+}
+
+function buildHeaders(options: RequestInit): Record<string, string> {
   const token = getToken();
   const isForm = options.body instanceof FormData || options.body instanceof URLSearchParams;
-  const headers: Record<string, string> = {
+  return {
     ...(options.body && !isForm ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers as Record<string, string> | undefined ?? {}),
   };
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { ...options, headers: buildHeaders(options) });
+
+  // Silent refresh: if we get a 401 on a non-auth endpoint, try refreshing once.
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      // Retry with the new token.
+      const retry = await fetch(`${BASE}${path}`, { ...options, headers: buildHeaders(options) });
+      if (retry.status === 204) return undefined as T;
+      const retryData = await retry.json();
+      if (!retry.ok) throw new Error(retryData?.detail ?? `HTTP ${retry.status}`);
+      return retryData as T;
+    }
+  }
+
   if (res.status === 204) return undefined as T;
   const data = await res.json();
   if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
@@ -47,6 +81,7 @@ export const auth = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     }),
   me: () => request<User>('/auth/me'),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };
 
 export const users = {

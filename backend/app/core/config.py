@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     # Auth
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 30  # 30 days
+    access_token_expire_minutes: int = 60  # 1 hour
+    refresh_token_expire_days: int = 30
 
     # Server
     host: str = "0.0.0.0"

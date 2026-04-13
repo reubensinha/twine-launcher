@@ -1,9 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { games as gamesApi, getToken } from '../api';
 import { Spinner } from '../components/ui';
 
 const POLL_MS = 3000;
+
+// Shared style for the overlay control buttons
+const overlayBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
+  background: 'rgba(0,0,0,0.55)',
+  color: 'rgba(255,255,255,0.8)',
+  border: '1px solid rgba(255,255,255,0.18)',
+  borderRadius: 5,
+  padding: '4px 9px',
+  cursor: 'pointer',
+  fontFamily: 'monospace',
+  fontSize: 13,
+  lineHeight: 1,
+  backdropFilter: 'blur(4px)',
+  userSelect: 'none',
+  ...extra,
+});
 
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
@@ -33,7 +49,6 @@ export function GamePage() {
 
     return () => {
       if (sessionIdRef.current !== null) {
-        // keepalive so the request completes even if the component is unmounting
         const token = getToken();
         fetch(`/api/v1/sessions/${sessionIdRef.current}`, {
           method: 'DELETE',
@@ -43,6 +58,38 @@ export function GamePage() {
         sessionIdRef.current = null;
       }
     };
+  }, [gameId]);
+
+  // ── Sync saves to server ────────────────────────────────────────────────────
+  const syncSaves = useCallback(async (force = false) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    try {
+      const iLS = frame.contentWindow?.localStorage;
+      if (!iLS) return;
+      const snap: Record<string, string> = {};
+      for (let i = 0; i < iLS.length; i++) {
+        const k = iLS.key(i)!;
+        snap[k] = iLS.getItem(k)!;
+      }
+      const serialized = JSON.stringify(snap);
+      if (!force && serialized === lastSnapRef.current) return;
+      setSyncState('syncing');
+      const token = getToken();
+      const res = await fetch(`/api/v1/saves/${gameId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ data: snap }),
+      });
+      if (!res.ok) throw new Error(res.statusText);
+      lastSnapRef.current = serialized;
+      setSyncState('');
+    } catch {
+      setSyncState('error');
+    }
   }, [gameId]);
 
   // ── Inject saves → navigate iframe → start polling ─────────────────────────
@@ -56,46 +103,22 @@ export function GamePage() {
         for (const [k, v] of Object.entries(gameInfo.initial_saves)) {
           iLS.setItem(k, v);
         }
-      } catch { /* cross-origin guard — shouldn't happen (same origin) */ }
+      } catch { /* same-origin guard */ }
       frame.src = gameInfo.game_url;
     };
     frame.addEventListener('load', onFirstLoad, { once: true });
     frame.src = 'about:blank';
 
-    const interval = setInterval(async () => {
-      try {
-        const iLS = frame.contentWindow?.localStorage;
-        if (!iLS) return;
-        const snap: Record<string, string> = {};
-        for (let i = 0; i < iLS.length; i++) {
-          const k = iLS.key(i)!;
-          snap[k] = iLS.getItem(k)!;
-        }
-        const serialized = JSON.stringify(snap);
-        if (serialized === lastSnapRef.current) return;
-        setSyncState('syncing');
-        const token = getToken();
-        const res = await fetch(`/api/v1/saves/${gameId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ data: snap }),
-        });
-        if (!res.ok) throw new Error(res.statusText);
-        lastSnapRef.current = serialized;
-        setSyncState('');
-      } catch {
-        setSyncState('error');
-      }
-    }, POLL_MS);
-
+    const interval = setInterval(() => syncSaves(), POLL_MS);
     return () => {
       clearInterval(interval);
       frame.removeEventListener('load', onFirstLoad);
     };
-  }, [gameInfo, gameId]);
+  }, [gameInfo, syncSaves]);
+
+  // ── In-game navigation ──────────────────────────────────────────────────────
+  const goBack    = () => frameRef.current?.contentWindow?.history.back();
+  const goForward = () => frameRef.current?.contentWindow?.history.forward();
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (error) {
@@ -106,12 +129,7 @@ export function GamePage() {
         background: 'var(--bg)', color: 'var(--text)',
       }}>
         <p style={{ color: 'var(--danger, #c0392b)', fontFamily: 'var(--font-ui)' }}>{error}</p>
-        <button
-          onClick={() => navigate('/')}
-          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '0.5rem 1rem', cursor: 'pointer', color: 'var(--text)', fontFamily: 'var(--font-ui)' }}
-        >
-          ← Back to Library
-        </button>
+        <button onClick={() => navigate('/')} style={overlayBtn()}>← Back to Library</button>
       </div>
     );
   }
@@ -124,10 +142,6 @@ export function GamePage() {
     );
   }
 
-  const syncLabel: Record<typeof syncState, string> = {
-    '': '●', syncing: '↑ saving', error: '✕ sync error',
-  };
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 50 }}>
       <iframe
@@ -138,33 +152,46 @@ export function GamePage() {
         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
       />
 
-      {/* Back button — top-left overlay */}
-      <button
-        onClick={() => navigate('/')}
-        title="Back to Library"
-        style={{
-          position: 'fixed', top: 10, left: 10, zIndex: 51,
-          background: 'rgba(0,0,0,0.55)', color: 'rgba(255,255,255,0.75)',
-          border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6,
-          padding: '4px 10px', cursor: 'pointer',
-          fontFamily: 'monospace', fontSize: 12,
-          backdropFilter: 'blur(4px)',
-          transition: 'opacity 0.2s',
-        }}
-      >
-        ← Library
-      </button>
-
-      {/* Sync indicator — bottom-right */}
+      {/* Top-left control bar */}
       <div style={{
-        position: 'fixed', bottom: 12, right: 16, zIndex: 51,
-        fontFamily: 'monospace', fontSize: 11, pointerEvents: 'none',
-        color: syncState === 'syncing' ? 'rgba(120,220,120,0.7)'
-             : syncState === 'error'   ? 'rgba(220,80,80,0.7)'
-             : 'rgba(255,255,255,0.25)',
-        transition: 'color 0.4s',
+        position: 'fixed', top: 10, left: 10, zIndex: 51,
+        display: 'flex', gap: 4, alignItems: 'center',
       }}>
-        {syncLabel[syncState]}
+        <button onClick={() => navigate('/')} title="Back to Library" style={overlayBtn()}>
+          ← Lib
+        </button>
+        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.2)', margin: '0 2px' }} />
+        <button onClick={goBack} title="Go back in game" style={overlayBtn()}>
+          ‹
+        </button>
+        <button onClick={goForward} title="Go forward in game" style={overlayBtn()}>
+          ›
+        </button>
+      </div>
+
+      {/* Bottom-right: manual save + sync indicator */}
+      <div style={{
+        position: 'fixed', bottom: 12, right: 14, zIndex: 51,
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        {syncState === 'error' && (
+          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(220,80,80,0.9)' }}>
+            ✕ sync error
+          </span>
+        )}
+        {syncState === 'syncing' && (
+          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(120,220,120,0.9)' }}>
+            ↑ saving…
+          </span>
+        )}
+        <button
+          onClick={() => syncSaves(true)}
+          title="Save now"
+          disabled={syncState === 'syncing'}
+          style={overlayBtn({ fontSize: 11, opacity: syncState === 'syncing' ? 0.5 : 1 })}
+        >
+          ↑ Save
+        </button>
       </div>
     </div>
   );

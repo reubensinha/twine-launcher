@@ -184,8 +184,15 @@ All prefixed with `TWINE_`:
 - [x] Windows desktop app (Tauri 2 + PyInstaller sidecar, NSIS installer)
 - [x] System tray (minimize to tray, Quit from tray menu)
 - [ ] Launch on startup (Windows autostart option in Settings)
-- [ ] User-configurable data and games directories (Settings page)
+- [ ] User-configurable data and games directories (Settings page and Windows installer)
+- [x] Manual save button in game view (always-visible ↑ Save button)
+- [x] Back / forward navigation buttons in game view
+- [x] Remember login status (token lifetime extended to 30 days)
+- [ ] Better settings page
+- [ ] Make Saving indicator bigger and longer when saving.
+- [ ] Windows desktop shortcuts for games.
+- [ ] Make password optional if only 1 user
+- [ ] Backup save restore doesn't work (Game not found warning)
+- [ ] Multiple users playing the same game simultaneously
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
 - [ ] Playnite library add-on
-- [ ] Windows game shortcuts
-- [ ] Multiple users playing the same game simultaneously

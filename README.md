@@ -43,7 +43,7 @@ docker compose up -d --build
 5. Complete the setup wizard to create your admin account
 6. Add games via the Library page (Admin → Library → Add Game)
 
-**Game and save data** are stored in `%AppData%\com.twine-launcher.app\`.  
+**Game and save data** are stored in `%AppData%\com.twinelauncher.desktop\`.  
 **To exit** the app fully, right-click the tray icon and select Quit.
 
 ## Development Setup

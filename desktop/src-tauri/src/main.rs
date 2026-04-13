@@ -40,7 +40,6 @@ fn wait_for_port(port: u16, max_attempts: u32, interval: Duration) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_tray::init())
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
             // ── Resolve data directories ───────────────────────────────────────

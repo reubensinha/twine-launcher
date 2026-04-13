@@ -104,15 +104,8 @@ fn main() {
                             let _ = w.set_focus();
                         }
                     }
-                    "quit" => {
-                        // Kill the sidecar before exiting so no orphan processes remain.
-                        if let Some(child) =
-                            app.state::<SidecarState>().0.lock().unwrap().take()
-                        {
-                            let _ = child.kill();
-                        }
-                        app.exit(0);
-                    }
+                    // Just trigger exit — RunEvent::Exit kills the sidecar reliably.
+                    "quit" => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
@@ -136,7 +129,7 @@ fn main() {
         })
         .on_window_event(|window, event| {
             // Intercept the close button: hide to tray instead of quitting.
-            // The user exits via Quit in the tray menu, which also kills the sidecar.
+            // The user exits via Quit in the tray menu.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
@@ -144,6 +137,15 @@ fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Twine Launcher");
+        .build(tauri::generate_context!())
+        .expect("error while building Twine Launcher")
+        .run(|app, event| {
+            // Kill the sidecar on every exit path (tray Quit, OS shutdown, etc.)
+            // so no orphan twine-launcher-backend process is ever left behind.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(child) = app.state::<SidecarState>().0.lock().unwrap().take() {
+                    let _ = child.kill();
+                }
+            }
+        });
 }

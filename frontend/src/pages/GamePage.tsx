@@ -32,10 +32,11 @@ export function GamePage() {
   } | null>(null);
   const [error, setError] = useState('');
 
-  const frameRef     = useRef<HTMLIFrameElement>(null);
-  const sessionIdRef = useRef<number | null>(null);
-  const lastSnapRef  = useRef<string>('{}');
-  const [syncState, setSyncState] = useState<'' | 'syncing' | 'error'>('');
+  const frameRef      = useRef<HTMLIFrameElement>(null);
+  const sessionIdRef  = useRef<number | null>(null);
+  const lastSnapRef   = useRef<string>('{}');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'error'>('');
 
   // ── Start session ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -86,7 +87,9 @@ export function GamePage() {
       });
       if (!res.ok) throw new Error(res.statusText);
       lastSnapRef.current = serialized;
-      setSyncState('');
+      setSyncState('saved');
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'saved' ? '' : s), 2500);
     } catch {
       setSyncState('error');
     }
@@ -175,20 +178,40 @@ export function GamePage() {
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
         {syncState === 'error' && (
-          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(220,80,80,0.9)' }}>
-            ✕ sync error
+          <span style={{
+            fontFamily: 'monospace', fontSize: 13, fontWeight: 600,
+            color: '#fff', background: 'rgba(190,50,50,0.85)',
+            padding: '5px 10px', borderRadius: 5,
+            backdropFilter: 'blur(4px)',
+          }}>
+            ✕ Save failed
           </span>
         )}
         {syncState === 'syncing' && (
-          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(120,220,120,0.9)' }}>
-            ↑ saving…
+          <span style={{
+            fontFamily: 'monospace', fontSize: 13, fontWeight: 600,
+            color: '#fff', background: 'rgba(30,110,30,0.85)',
+            padding: '5px 10px', borderRadius: 5,
+            backdropFilter: 'blur(4px)',
+          }}>
+            ↑ Saving…
+          </span>
+        )}
+        {syncState === 'saved' && (
+          <span style={{
+            fontFamily: 'monospace', fontSize: 13, fontWeight: 600,
+            color: '#fff', background: 'rgba(30,130,30,0.85)',
+            padding: '5px 10px', borderRadius: 5,
+            backdropFilter: 'blur(4px)',
+          }}>
+            ✓ Saved
           </span>
         )}
         <button
           onClick={() => syncSaves(true)}
           title="Save now"
           disabled={syncState === 'syncing'}
-          style={overlayBtn({ fontSize: 11, opacity: syncState === 'syncing' ? 0.5 : 1 })}
+          style={overlayBtn({ opacity: syncState === 'syncing' ? 0.5 : 1 })}
         >
           ↑ Save
         </button>

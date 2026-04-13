@@ -2,16 +2,100 @@
 Games router — CRUD for game metadata and the iframe loader/wrapper page.
 """
 
+import io
 import json
-from fastapi import APIRouter, HTTPException, status
+import re
+import shutil
+import zipfile
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import HTMLResponse
 
+from backend.app.core.config import get_settings
 from backend.app.core.database import Game, GameSession, Save
 from backend.app.core.dependencies import AdminUser, CurrentUser, DBSession
 from backend.app.core.session_registry import registry
 from backend.app.schemas import GameCreate, GameResponse, GameUpdate
 
 router = APIRouter(prefix="/games", tags=["games"])
+
+# ── Upload helpers ─────────────────────────────────────────────────────────────
+
+_COVER_NAMES = {"cover.jpg", "cover.jpeg", "cover.png", "cover.webp", "cover.gif"}
+
+
+def _slugify(name: str) -> str:
+    slug = name.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_-]+", "-", slug)
+    return slug.strip("-") or "game"
+
+
+def _unique_game_dir(games_dir: Path, slug: str) -> Path:
+    """Return a non-existing subdirectory path under games_dir."""
+    candidate = games_dir / slug
+    if not candidate.exists():
+        return candidate
+    for i in range(2, 1000):
+        candidate = games_dir / f"{slug}-{i}"
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError("Could not find a unique game directory name")
+
+
+def _strip_zip_prefix(names: list[str]) -> list[str]:
+    """Strip a single common top-level directory from all zip entries."""
+    file_entries = [n for n in names if not n.endswith("/")]
+    if not file_entries:
+        return names
+    top_dirs: set[str] = set()
+    for n in file_entries:
+        parts = Path(n).parts
+        if len(parts) < 2:
+            return names  # file at root — no shared prefix
+        top_dirs.add(parts[0])
+    if len(top_dirs) == 1:
+        prefix = top_dirs.pop() + "/"
+        return [n[len(prefix):] if n.startswith(prefix) else n for n in names]
+    return names
+
+
+def _find_entry_point(files: list[str]) -> Optional[str]:
+    """Pick the HTML entry point from a list of relative file paths."""
+    clean = [f.replace("\\", "/").lstrip("/") for f in files if f and not f.endswith("/")]
+    # 1. index.html at root
+    for f in clean:
+        p = Path(f)
+        if p.name.lower() == "index.html" and len(p.parts) == 1:
+            return f
+    # 2. Any single .html at root
+    root_htmls = [f for f in clean if Path(f).suffix.lower() == ".html" and len(Path(f).parts) == 1]
+    if root_htmls:
+        return root_htmls[0]
+    # 3. index.html anywhere
+    for f in clean:
+        if Path(f).name.lower() == "index.html":
+            return f
+    # 4. Any .html anywhere
+    for f in clean:
+        if Path(f).suffix.lower() == ".html":
+            return f
+    return None
+
+
+def _find_cover(files: list[str]) -> Optional[str]:
+    """Return the relative path of a cover image, if present."""
+    clean = [f.replace("\\", "/").lstrip("/") for f in files if f and not f.endswith("/")]
+    for f in clean:
+        p = Path(f)
+        if p.name.lower() in _COVER_NAMES and len(p.parts) == 1:
+            return f
+    for f in clean:
+        if Path(f).name.lower() in _COVER_NAMES:
+            return f
+    return None
 
 
 @router.get("/", response_model=list[GameResponse])
@@ -28,6 +112,90 @@ def create_game(payload: GameCreate, session: DBSession, admin: AdminUser):
     session.commit()
     session.refresh(game)
     return game
+
+
+@router.post("/upload", response_model=GameResponse, status_code=201)
+async def upload_game(
+    session: DBSession,
+    admin: AdminUser,
+    name: str = Form(...),
+    description: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
+    files: list[UploadFile] = File(default=[]),
+    paths: list[str] = Form(default=[]),
+):
+    """
+    Upload a game from a zip file or a set of folder files.
+    Copies files to games_dir, auto-detects the HTML entry point and cover image.
+    Admin only.
+    """
+    settings = get_settings()
+    games_dir = Path(settings.games_dir)
+    games_dir.mkdir(parents=True, exist_ok=True)
+
+    slug = _slugify(name)
+    game_dir = _unique_game_dir(games_dir, slug)
+    game_dir.mkdir(parents=True)
+
+    try:
+        if file is not None:
+            # ── Zip upload ────────────────────────────────────────────────────
+            data = await file.read()
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(data))
+            except zipfile.BadZipFile:
+                raise HTTPException(status_code=422, detail="Uploaded file is not a valid zip archive")
+            with zf:
+                names = zf.namelist()
+                stripped = _strip_zip_prefix(names)
+                for original, relative in zip(names, stripped):
+                    if not relative or relative.endswith("/"):
+                        continue
+                    dest = game_dir / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(original))
+            file_list = stripped
+        elif files:
+            # ── Folder upload (multiple files + parallel paths list) ───────────
+            if not paths or len(paths) != len(files):
+                raise HTTPException(status_code=422, detail="File count and path count must match")
+            for upload_file, rel_path in zip(files, paths):
+                rel_path = rel_path.replace("\\", "/").lstrip("/")
+                dest = game_dir / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(await upload_file.read())
+            file_list = list(paths)
+        else:
+            raise HTTPException(status_code=422, detail="No files provided")
+
+        entry = _find_entry_point(file_list)
+        if not entry:
+            raise HTTPException(status_code=422, detail="No HTML file found in the uploaded files")
+
+        cover = _find_cover(file_list)
+        cover_url = f"/static/games/{game_dir.name}/{cover}" if cover else None
+        file_path = f"{game_dir.name}/{entry}"
+
+        game = Game(
+            name=name,
+            format="",
+            file_path=file_path,
+            description=description,
+            cover_image=cover_url,
+            source="local",
+            added_by=admin.id,
+        )
+        session.add(game)
+        session.commit()
+        session.refresh(game)
+        return game
+
+    except HTTPException:
+        shutil.rmtree(game_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(game_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
 
 @router.get("/{game_id}", response_model=GameResponse)

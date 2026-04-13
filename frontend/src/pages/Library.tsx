@@ -1,12 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import { games as gamesApi } from '../api';
 import { useAuthStore } from '../store/auth';
-import { Button, Modal, Input, Select, Toast, Spinner } from '../components/ui';
-import type { Game, GameCreate } from '../types';
+import { Button, Modal, Input, Toast, Spinner } from '../components/ui';
 
-const FORMATS = ['SugarCube', 'Harlowe', 'Chapbook', 'Snowman', 'Other'].map(f => ({ value: f, label: f }));
+// ── File-name helpers ─────────────────────────────────────────────────────────
 
-const EMPTY_FORM: GameCreate = { name: '', format: 'SugarCube', file_path: '' };
+function nameFromZip(filename: string): string {
+  return filename.replace(/\.zip$/i, '').replace(/[-_]/g, ' ');
+}
+function nameFromFolder(files: FileList): string {
+  const first = files[0]?.webkitRelativePath ?? '';
+  return first.split('/')[0].replace(/[-_]/g, ' ');
+}
+import type { Game } from '../types';
 
 export function LibraryPage() {
   const { user }   = useAuthStore();
@@ -14,7 +20,6 @@ export function LibraryPage() {
   const [gameList, setGameList] = useState<Game[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [addOpen,  setAddOpen]  = useState(false);
-  const [form,     setForm]     = useState<GameCreate>(EMPTY_FORM);
   const [saving,   setSaving]   = useState(false);
   const [toast,    setToast]    = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
 
@@ -43,14 +48,12 @@ export function LibraryPage() {
     }
   };
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAdd = async (name: string, description: string, zipFile?: File, folderFiles?: File[], folderPaths?: string[]) => {
     setSaving(true);
     try {
-      await gamesApi.create(form);
-      setToast({ msg: `"${form.name}" added.`, type: 'success' });
+      await gamesApi.upload({ name, description: description || undefined, zipFile, folderFiles, folderPaths });
+      setToast({ msg: `"${name}" added.`, type: 'success' });
       setAddOpen(false);
-      setForm(EMPTY_FORM);
       load();
     } catch (err: unknown) {
       setToast({ msg: err instanceof Error ? err.message : 'Failed to add game', type: 'error' });
@@ -89,20 +92,12 @@ export function LibraryPage() {
         </div>
       )}
 
-      {/* Add modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a game">
-        <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <Input label="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="My Twine Game" required autoFocus />
-          <Select label="Format" value={form.format} onChange={e => setForm({ ...form, format: e.target.value })} options={FORMATS} />
-          <Input label="File path" value={form.file_path} onChange={e => setForm({ ...form, file_path: e.target.value })} placeholder="my-game/index.html" required />
-          <Input label="Description" value={form.description ?? ''} onChange={e => setForm({ ...form, description: e.target.value || undefined })} placeholder="Optional short description" />
-          <Input label="Cover image URL" value={form.cover_image ?? ''} onChange={e => setForm({ ...form, cover_image: e.target.value || undefined })} placeholder="/static/games/my-game/cover.jpg" />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
-            <Button type="button" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button type="submit" variant="primary" loading={saving}>Add game</Button>
-          </div>
-        </form>
-      </Modal>
+      <AddGameModal
+        open={addOpen}
+        saving={saving}
+        onClose={() => setAddOpen(false)}
+        onSubmit={handleAdd}
+      />
 
       {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
@@ -151,9 +146,11 @@ function GameCard({ game, index, isAdmin, onPlay, onDelete }: {
       <div style={{ fontFamily: 'var(--font-body)', fontSize: '1.05rem', fontWeight: 500, color: 'var(--text)', lineHeight: 1.3 }}>
         {game.name}
       </div>
-      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {game.format}
-      </div>
+      {game.format && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {game.format}
+        </div>
+      )}
       {game.description && (
         <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5, flex: 1, marginTop: '0.1rem' }}>
           {game.description}
@@ -165,5 +162,129 @@ function GameCard({ game, index, isAdmin, onPlay, onDelete }: {
         {isAdmin && <Button variant="danger" size="sm" onClick={onDelete}>Remove</Button>}
       </div>
     </div>
+  );
+}
+
+// ── Add Game Modal ────────────────────────────────────────────────────────────
+
+type UploadMode = 'zip' | 'folder';
+
+function AddGameModal({ open, saving, onClose, onSubmit }: {
+  open: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (name: string, description: string, zipFile?: File, folderFiles?: File[], folderPaths?: string[]) => void;
+}) {
+  const [mode, setMode]               = useState<UploadMode>('zip');
+  const [name, setName]               = useState('');
+  const [description, setDescription] = useState('');
+  const [zipFile, setZipFile]         = useState<File | null>(null);
+  const [folderFiles, setFolderFiles] = useState<File[]>([]);
+  const [folderPaths, setFolderPaths] = useState<string[]>([]);
+  const [fileLabel, setFileLabel]     = useState('');
+
+  const reset = () => {
+    setMode('zip'); setName(''); setDescription('');
+    setZipFile(null); setFolderFiles([]); setFolderPaths([]); setFileLabel('');
+  };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setZipFile(f);
+    if (f) {
+      setFileLabel(f.name);
+      if (!name) setName(nameFromZip(f.name));
+    }
+  };
+
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    const autoName = nameFromFolder(list);
+    const prefix = list[0].webkitRelativePath.split('/')[0] + '/';
+    const files = Array.from(list);
+    const paths = files.map(f =>
+      f.webkitRelativePath.startsWith(prefix)
+        ? f.webkitRelativePath.slice(prefix.length)
+        : f.webkitRelativePath
+    );
+    setFolderFiles(files);
+    setFolderPaths(paths);
+    setFileLabel(`${list.length} file${list.length !== 1 ? 's' : ''} selected`);
+    if (!name) setName(autoName);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode === 'zip' && zipFile) {
+      onSubmit(name, description, zipFile);
+    } else if (mode === 'folder' && folderFiles.length > 0) {
+      onSubmit(name, description, undefined, folderFiles, folderPaths);
+    }
+  };
+
+  const canSubmit = name.trim() !== '' && (mode === 'zip' ? zipFile !== null : folderFiles.length > 0);
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: '0.5rem', cursor: 'pointer', border: 'none', borderRadius: 'var(--radius)',
+    fontFamily: 'var(--font-ui)', fontSize: '0.82rem',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? '#fff' : 'var(--text-muted)',
+    transition: 'background var(--transition), color var(--transition)',
+  });
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Add a game">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: '0.25rem', padding: '0.25rem', background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+          <button type="button" style={tabStyle(mode === 'zip')} onClick={() => { setMode('zip'); setFileLabel(''); setZipFile(null); }}>
+            Zip file
+          </button>
+          <button type="button" style={tabStyle(mode === 'folder')} onClick={() => { setMode('folder'); setFileLabel(''); setFolderFiles([]); setFolderPaths([]); }}>
+            Game folder
+          </button>
+        </div>
+
+        {/* File picker */}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-ui)', color: 'var(--text-muted)' }}>
+            {mode === 'zip' ? 'Zip archive' : 'Game folder'}
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{
+              flex: 1, padding: '0.5rem 0.75rem', background: 'var(--surface)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              fontSize: '0.85rem', color: fileLabel ? 'var(--text)' : 'var(--text-muted)',
+              fontFamily: 'var(--font-ui)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {fileLabel || (mode === 'zip' ? 'No file chosen' : 'No folder chosen')}
+            </span>
+            <div style={{ position: 'relative' }}>
+              <Button type="button" size="sm">Browse…</Button>
+              <input
+                type="file"
+                accept={mode === 'zip' ? '.zip' : undefined}
+                // @ts-expect-error webkitdirectory is not in TS types but works in all modern browsers
+                webkitdirectory={mode === 'folder' ? '' : undefined}
+                multiple={mode === 'folder'}
+                onChange={mode === 'zip' ? handleZipChange : handleFolderChange}
+                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
+              />
+            </div>
+          </div>
+        </label>
+
+        <Input label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="My Twine Game" required autoFocus />
+        <Input label="Description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional short description" />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '0.5rem' }}>
+          <Button type="button" onClick={handleClose}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={saving} disabled={!canSubmit}>Add game</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

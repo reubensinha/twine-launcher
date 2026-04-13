@@ -82,7 +82,7 @@ class UserResponse(BaseModel):
 
 class GameCreate(BaseModel):
     name: str
-    format: str
+    format: str = ""
     file_path: str
     description: Optional[str] = None
     cover_image: Optional[str] = None

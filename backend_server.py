@@ -42,6 +42,14 @@ def main() -> None:
         meipass: str = getattr(sys, "_MEIPASS", "")
         os.environ["TWINE_STATIC_UI_DIR"] = os.path.join(meipass, "static_ui")
 
+        # With console=False in PyInstaller, sys.stdout/stderr are None.
+        # Uvicorn's log formatter calls .isatty() on the stream and crashes.
+        # Redirect to devnull so logging initialises without error.
+        if sys.stdout is None:
+            sys.stdout = open(os.devnull, "w")
+        if sys.stderr is None:
+            sys.stderr = open(os.devnull, "w")
+
     # ── Import and run uvicorn AFTER env vars are set ──────────────────────────
     import uvicorn  # noqa: PLC0415
 

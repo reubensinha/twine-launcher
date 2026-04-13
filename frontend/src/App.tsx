@@ -60,7 +60,11 @@ function AppRouter() {
   }
 
   if (setupRequired) {
-    return <Routes><Route path="*" element={<SetupPage />} /></Routes>;
+    return (
+      <Routes>
+        <Route path="*" element={<SetupPage onComplete={() => setSetupRequired(false)} />} />
+      </Routes>
+    );
   }
 
   return (

@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/auth';
 import { useThemeStore } from '../store/theme';
 import { Button, Input, Toast } from '../components/ui';
 
-export function SetupPage() {
+export function SetupPage({ onComplete }: { onComplete?: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm]   = useState('');
@@ -22,6 +22,7 @@ export function SetupPage() {
     try {
       await setup(username, password);
       await fetchActive();
+      onComplete?.();
       navigate('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed');

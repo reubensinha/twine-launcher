@@ -91,7 +91,8 @@ export const saves = {
 };
 
 export const backup = {
-  export: async (scope: 'full' | 'saves-only'): Promise<void> => {
+  // Returns true if the file was saved, false if the user cancelled the save dialog.
+  export: async (scope: 'full' | 'saves-only'): Promise<boolean> => {
     const token = getToken();
     const res = await fetch(`${BASE}/backup/export`, {
       method: 'POST',
@@ -100,11 +101,38 @@ export const backup = {
     });
     if (!res.ok) { const err = await res.json(); throw new Error(err?.detail ?? 'Export failed'); }
     const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') ?? '';
+    const filename = cd.match(/filename="(.+)"/)?.[1] ?? 'twine-launcher-backup.zip';
+
+    // showSaveFilePicker gives a native "Save As" dialog in WebView2 and modern browsers.
+    if ('showSaveFilePicker' in window) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+      } catch (err: unknown) {
+        // AbortError = user cancelled the dialog — not an error condition.
+        if (err instanceof DOMException && err.name === 'AbortError') return false;
+        throw err;
+      }
+    }
+
+    // Fallback for environments that don't support showSaveFilePicker.
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const cd = res.headers.get('content-disposition') ?? '';
-    a.download = cd.match(/filename="(.+)"/)?.[1] ?? 'twine-launcher-backup.zip';
-    a.href = url; a.click(); URL.revokeObjectURL(url);
+    a.download = filename;
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return true;
   },
   import: (file: File) => {
     const form = new FormData();

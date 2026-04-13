@@ -13,8 +13,8 @@ export function BackupPage() {
   const handleExport = async (scope: 'full' | 'saves-only') => {
     setExporting(scope);
     try {
-      await backupApi.export(scope);
-      setToast({ msg: 'Backup downloaded.', type: 'success' });
+      const saved = await backupApi.export(scope);
+      if (saved) setToast({ msg: 'Backup saved.', type: 'success' });
     } catch (err: unknown) {
       setToast({ msg: err instanceof Error ? err.message : 'Export failed', type: 'error' });
     } finally { setExporting(null); }

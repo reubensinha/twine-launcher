@@ -144,6 +144,16 @@ fn main() {
             // so no orphan twine-launcher-backend process is ever left behind.
             if let tauri::RunEvent::Exit = event {
                 if let Some(child) = app.state::<SidecarState>().0.lock().unwrap().take() {
+                    // PyInstaller --onefile on Windows runs a two-process chain:
+                    // the bootloader (.exe) spawns the actual Python interpreter as a
+                    // child. Killing the bootloader alone orphans the Python process.
+                    // taskkill /F /T terminates the entire process tree.
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/F", "/T", "/PID", &child.pid().to_string()])
+                            .output();
+                    }
                     let _ = child.kill();
                 }
             }

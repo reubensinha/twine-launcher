@@ -192,7 +192,7 @@ All prefixed with `TWINE_`:
 - [ ] Make Saving indicator bigger and longer when saving.
 - [ ] Windows desktop shortcuts for games.
 - [ ] Make password optional if only 1 user
-- [ ] Backup save restore doesn't work (Game not found warning)
+- [x] Backup save restore doesn't work (Game not found warning)
 - [ ] Multiple users playing the same game simultaneously
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
 - [ ] Playnite library add-on

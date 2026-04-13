@@ -180,8 +180,8 @@ def import_backup(db: Session, zip_bytes: bytes) -> dict:
             username_safe, game_filename = parts
             game_name = game_filename[:-5]  # strip .json
 
-            user = db.query(User).filter(User.username == username_safe).first()
-            game = db.query(Game).filter(Game.name == game_name).first()
+            user = next((u for u in db.query(User).all() if _safe_name(u.username) == username_safe), None)
+            game = next((g for g in db.query(Game).all() if _safe_name(g.name) == game_name), None)
 
             if not user:
                 summary["errors"].append(f"User '{username_safe}' not found — skipped")

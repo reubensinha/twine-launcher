@@ -97,7 +97,7 @@ fn main() {
                 .tooltip("Twine Launcher")
                 .menu(&menu)
                 .menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
+                .on_menu_event(|app: &tauri::AppHandle, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
@@ -115,7 +115,7 @@ fn main() {
                     }
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
                     // Left-click on the tray icon → show and focus the window.
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,

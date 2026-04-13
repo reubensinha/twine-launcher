@@ -63,6 +63,10 @@ export const games = {
   update: (id: number, p: GameUpdate) => request<Game>(`/games/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
   delete: (id: number) => request<void>(`/games/${id}`, { method: 'DELETE' }),
   playUrl: (id: number) => `/api/v1/games/${id}/play`,
+  startSession: (id: number) =>
+    request<{ session_id: number; game_url: string; game_name: string; initial_saves: Record<string, string> }>(
+      `/games/${id}/session`, { method: 'POST' }
+    ),
   upload: (params: { name: string; description?: string; zipFile?: File; folderFiles?: File[]; folderPaths?: string[] }) => {
     const form = new FormData();
     form.append('name', params.name);

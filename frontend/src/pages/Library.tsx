@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { games as gamesApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { Button, Modal, Input, Toast, Spinner } from '../components/ui';
@@ -16,6 +17,7 @@ import type { Game } from '../types';
 
 export function LibraryPage() {
   const { user }   = useAuthStore();
+  const navigate   = useNavigate();
   const isAdmin    = user?.role === 'admin';
   const [gameList, setGameList] = useState<Game[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -32,9 +34,7 @@ export function LibraryPage() {
   useEffect(() => { load(); }, [load]);
 
   const handlePlay = (game: Game) => {
-    // The /play endpoint itself enforces single-instance and returns 409 if already open.
-    // We open in a new tab; if the tab open fails due to 409, the wrapper page will show the error.
-    window.open(gamesApi.playUrl(game.id), '_blank', 'noopener');
+    navigate(`/play/${game.id}`);
   };
 
   const handleDelete = async (game: Game) => {

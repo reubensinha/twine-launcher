@@ -231,6 +231,50 @@ def delete_game(game_id: int, session: DBSession, _: AdminUser):
     session.commit()
 
 
+@router.post("/{game_id}/session", status_code=201)
+def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
+    """
+    Create a game session and return JSON connection info for the React player.
+    Returns: session_id, game_url, initial_saves (dict).
+    """
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    active = registry.get(game_id)
+    if active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'"{game.name}" is already open (opened by {active.username})',
+        )
+
+    db_session = GameSession(game_id=game_id, user_id=current_user.id)
+    session.add(db_session)
+    session.commit()
+    session.refresh(db_session)
+
+    registry.register(
+        session_id=db_session.id,
+        game_id=game_id,
+        user_id=current_user.id,
+        username=current_user.username,
+        game_name=game.name,
+    )
+
+    save_record = session.query(Save).filter(
+        Save.game_id == game_id,
+        Save.user_id == current_user.id,
+    ).first()
+    initial_saves = save_record.data if save_record else {}
+
+    return {
+        "session_id": db_session.id,
+        "game_url": f"/static/games/{game.file_path}",
+        "game_name": game.name,
+        "initial_saves": initial_saves,
+    }
+
+
 @router.get("/{game_id}/play", response_class=HTMLResponse)
 def play_game(game_id: int, session: DBSession, current_user: CurrentUser):
     """

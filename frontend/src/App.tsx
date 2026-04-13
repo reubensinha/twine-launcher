@@ -7,6 +7,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage }     from './pages/Login';
 import { SetupPage }     from './pages/Setup';
 import { LibraryPage }   from './pages/Library';
+import { GamePage }      from './pages/GamePage';
 import { SettingsPage }  from './pages/Settings';
 import { AdminDashboard } from './pages/admin/Dashboard';
 import { UsersPage }      from './pages/admin/Users';
@@ -70,6 +71,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/play/:id" element={<RequireAuth><GamePage /></RequireAuth>} />
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<LibraryPage />} />
         <Route path="/settings" element={<SettingsPage />} />

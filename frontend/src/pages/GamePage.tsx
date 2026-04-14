@@ -36,6 +36,7 @@ export function GamePage() {
   const sessionIdRef  = useRef<number | null>(null);
   const lastSnapRef   = useRef<string>('{}');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSyncingRef  = useRef(false);
   const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'error'>('');
 
   // ── Start session ───────────────────────────────────────────────────────────
@@ -63,8 +64,10 @@ export function GamePage() {
 
   // ── Sync saves to server ────────────────────────────────────────────────────
   const syncSaves = useCallback(async (force = false) => {
+    if (isSyncingRef.current) return;
     const frame = frameRef.current;
     if (!frame) return;
+    isSyncingRef.current = true;
     try {
       const iLS = frame.contentWindow?.localStorage;
       if (!iLS) return;
@@ -92,6 +95,8 @@ export function GamePage() {
       savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'saved' ? '' : s), 2500);
     } catch {
       setSyncState('error');
+    } finally {
+      isSyncingRef.current = false;
     }
   }, [gameId]);
 

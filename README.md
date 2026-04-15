@@ -196,4 +196,5 @@ All prefixed with `TWINE_`:
 - [ ] Multiple users playing the same game simultaneously
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
 - [ ] Playnite library add-on
-- [ ] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
+- [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
+- [ ] Prepare to upload on Winget

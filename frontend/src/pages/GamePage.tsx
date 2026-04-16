@@ -39,6 +39,23 @@ export function GamePage() {
   const isSyncingRef  = useRef(false);
   const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'error'>('');
 
+  // ── Delete session on full page unload (window close) ──────────────────────
+  useEffect(() => {
+    const handlePageHide = () => {
+      const sid = sessionIdRef.current;
+      if (sid === null) return;
+      sessionIdRef.current = null; // prevent double-DELETE with cleanup effect
+      const token = getToken();
+      fetch(`/api/v1/sessions/${sid}`, {
+        method: 'DELETE',
+        keepalive: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, []);
+
   // ── Start session ───────────────────────────────────────────────────────────
   useEffect(() => {
     gamesApi.startSession(gameId)

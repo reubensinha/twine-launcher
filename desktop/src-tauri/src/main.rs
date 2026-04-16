@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -16,8 +16,8 @@ use tauri_plugin_shell::ShellExt;
 /// app and can be killed cleanly when the user selects Quit from the tray.
 struct SidecarState(Mutex<Option<CommandChild>>);
 
-/// The port the backend sidecar is listening on. Stored so tray/show handlers
-/// can reload the app URL on demand without going through setup scope.
+/// The port the backend sidecar is listening on. Stored so the open_main_window
+/// helper can construct the correct URL after a window has been closed.
 struct AppPort(Mutex<u16>);
 
 /// Asks the OS to assign a free port by binding to port 0, reads the assigned
@@ -41,23 +41,43 @@ fn wait_for_port(port: u16, max_attempts: u32, interval: Duration) {
     }
 }
 
+/// Show the main window, creating a fresh one if it was previously closed.
+///
+/// This is the Steam/Epic-style model: the library (backend + tray) is always
+/// running; the window is an independent view you open and close freely.
+fn open_main_window(app: &tauri::AppHandle) {
+    let port = *app.state::<AppPort>().0.lock().unwrap();
+    let url_str = format!("http://127.0.0.1:{}", port);
+
+    if let Some(w) = app.get_webview_window("main") {
+        // Window is still open — bring it to the front.
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.unminimize();
+    } else if let Ok(url) = url_str.parse::<tauri::Url>() {
+        // Window was closed — create a fresh one pointing at the running backend.
+        if let Ok(w) = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+            .title("Twine Launcher")
+            .inner_size(1280.0, 800.0)
+            .min_inner_size(800.0, 600.0)
+            .build()
+        {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
-        // Prevent a second instance from launching. If the user tries to open
-        // the app while it's already running, show/focus the existing window.
+        // Prevent a second instance from launching. A second launch attempt
+        // opens (or focuses) the window in the already-running instance instead.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let port = *app.state::<AppPort>().0.lock().unwrap();
-                let url = format!("http://127.0.0.1:{}", port);
-                let _ = w.eval(&format!("window.location.replace('{}')", url));
-                let _ = w.show();
-                let _ = w.set_focus();
-                let _ = w.unminimize();
-            }
+            open_main_window(app);
         }))
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarState(Mutex::new(None)))
-        .manage(AppPort(Mutex::new(0))) // real port written in setup after find_free_port()
+        .manage(AppPort(Mutex::new(0))) // real port written in setup
         .setup(|app| {
             // ── Resolve data directories ───────────────────────────────────────
             let app_data = app.path().app_data_dir()?;
@@ -84,7 +104,6 @@ fn main() {
                 ])
                 .spawn()?;
 
-            // Keep the child in app state so it is not dropped prematurely.
             *app.state::<SidecarState>().0.lock().unwrap() = Some(child);
 
             // ── Wait for the backend, then navigate the hidden window ──────────
@@ -93,7 +112,6 @@ fn main() {
                 // Keep rx alive so the sidecar stdout pipe stays open.
                 let _rx = rx;
 
-                // Poll until the TCP port accepts connections (max ~30 s).
                 wait_for_port(port, 60, Duration::from_millis(500));
 
                 if let Some(window) = handle.get_webview_window("main") {
@@ -116,69 +134,40 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app: &tauri::AppHandle, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let port = *app.state::<AppPort>().0.lock().unwrap();
-                            let url = format!("http://127.0.0.1:{}", port);
-                            let _ = w.eval(&format!("window.location.replace('{}')", url));
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    // Just trigger exit — RunEvent::Exit kills the sidecar reliably.
+                    "show" => open_main_window(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
-                    // Left-click on the tray icon → show and focus the window.
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
                     } = event
                     {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            let port = *app.state::<AppPort>().0.lock().unwrap();
-                            let url = format!("http://127.0.0.1:{}", port);
-                            let _ = w.eval(&format!("window.location.replace('{}')", url));
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        open_main_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Intercept the close button: hide to tray instead of quitting.
-            // The user exits via Quit in the tray menu.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    // Unload the frontend (triggers React cleanup / session DELETE)
-                    // before hiding. Behaves like closing a browser tab: the backend
-                    // stays alive, but the page is gone. The next show reloads fresh.
-                    // eval() is on WebviewWindow, not Window — look it up via app handle.
-                    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
-                        let _ = wv.eval("window.location.replace('about:blank')");
-                    }
-                    let _ = window.hide();
-                }
-            }
-        })
+        // No on_window_event needed: closing the window destroys the WebviewWindow
+        // (like closing a browser tab). The pagehide event fires in WebView2,
+        // which the frontend uses to clean up active game sessions.
         .build(tauri::generate_context!())
         .expect("error while building Twine Launcher")
-        .run(|app, event| {
-            // Kill the sidecar on every exit path (tray Quit, OS shutdown, etc.)
-            // so no orphan twine-launcher-backend process is ever left behind.
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                // All windows closed — keep the library alive in the tray.
+                // The backend is still running and accessible.
+                api.prevent_exit();
+            }
+            tauri::RunEvent::Exit => {
+                // Explicit Quit from tray (or OS shutdown) — kill the sidecar.
+                // PyInstaller --onefile spawns a two-process chain (bootloader +
+                // Python interpreter); taskkill /T kills the whole tree.
                 if let Some(child) = app.state::<SidecarState>().0.lock().unwrap().take() {
-                    // PyInstaller --onefile on Windows runs a two-process chain:
-                    // the bootloader (.exe) spawns the actual Python interpreter as a
-                    // child. Killing the bootloader alone orphans the Python process.
-                    // taskkill /F /T terminates the entire process tree.
                     #[cfg(target_os = "windows")]
                     {
                         let _ = std::process::Command::new("taskkill")
@@ -188,5 +177,6 @@ fn main() {
                     let _ = child.kill();
                 }
             }
+            _ => {}
         });
 }

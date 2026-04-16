@@ -11,7 +11,7 @@ Self-hosted Twine game library with cross-device save sync, multi-user support, 
 - **Force-close sessions** — admins can close any active session from the dashboard
 - **Backup / restore** — export full (game files + saves) or saves-only backups as portable zip files
 - **Themes** — 5 built-in themes plus custom JSON upload; global default set by admin, users can override personally
-- **Windows desktop app** — installs like any Windows program; lives in the system tray; no browser required
+- **Windows desktop app** — installs like any Windows program; Steam/Epic-style system tray — library always running in background; open and close the window independently; no browser required
 
 ## Quick Start (Docker)
 
@@ -39,12 +39,14 @@ docker compose up -d --build
 1. Download the latest `Twine Launcher_x.x.x_x64-setup.exe` from the Releases page
 2. Run the installer
 3. Launch **Twine Launcher** from the Start Menu
-4. The app starts in the system tray — the window opens automatically once ready (~5 seconds)
+4. The library starts in the system tray — the window opens automatically once ready (~5 seconds)
 5. Complete the setup wizard to create your admin account
 6. Add games via the Library page (Admin → Library → Add Game)
 
+**Window vs. library**: closing the window (× button) dismisses the UI but keeps the library running in the tray — like closing the Steam window. Click the tray icon (or relaunch from Start Menu) to reopen the window instantly, with no startup delay.
+
 **Game and save data** are stored in `%AppData%\com.twinelauncher.desktop\`.  
-**To exit** the app fully, right-click the tray icon and select Quit.
+**To exit the library fully**, right-click the tray icon and select Quit.
 
 ## Development Setup
 

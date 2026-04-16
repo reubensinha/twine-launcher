@@ -160,7 +160,10 @@ fn main() {
                     // Unload the frontend (triggers React cleanup / session DELETE)
                     // before hiding. Behaves like closing a browser tab: the backend
                     // stays alive, but the page is gone. The next show reloads fresh.
-                    let _ = window.eval("window.location.replace('about:blank')");
+                    // eval() is on WebviewWindow, not Window — look it up via app handle.
+                    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
+                        let _ = wv.eval("window.location.replace('about:blank')");
+                    }
                     let _ = window.hide();
                 }
             }

@@ -197,4 +197,5 @@ All prefixed with `TWINE_`:
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
 - [ ] Playnite library add-on
 - [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
+- [x] Opening app from Start Menu/shortcut while already running should focus existing window, not launch second instance
 - [ ] Prepare to upload on Winget

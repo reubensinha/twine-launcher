@@ -124,17 +124,6 @@ export function GamePage() {
     };
   }, [gameInfo, syncSaves]);
 
-  // ── Navigate home when window is hidden (close-to-tray in desktop app) ───
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        navigate('/');
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [navigate]);
-
   // ── In-game navigation ──────────────────────────────────────────────────────
   const goBack    = () => frameRef.current?.contentWindow?.history.back();
   const goForward = () => frameRef.current?.contentWindow?.history.forward();

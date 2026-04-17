@@ -4,6 +4,8 @@ import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
 import { Button, Toast } from '../components/ui';
 
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
 export function SettingsPage() {
   const { user }                     = useAuthStore();
   const { builtins, fetchBuiltins, fetchActive, active, source } = useThemeStore();
@@ -14,7 +16,17 @@ export function SettingsPage() {
   const userFileRef   = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
 
+  const [autostart, setAutostart]           = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(false);
+
   useEffect(() => { fetchBuiltins(); }, [fetchBuiltins]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    import('@tauri-apps/plugin-autostart').then(({ isEnabled }) =>
+      isEnabled().then(setAutostart)
+    );
+  }, []);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -90,6 +102,18 @@ export function SettingsPage() {
     }
   };
 
+  const toggleAutostart = async () => {
+    setAutostartLoading(true);
+    try {
+      const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
+      if (autostart) await disable(); else await enable();
+      setAutostart(await isEnabled());
+      setToast({ msg: autostart ? 'Removed from startup.' : 'Will launch on startup.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update startup setting.', type: 'error' });
+    } finally { setAutostartLoading(false); }
+  };
+
   const Section = ({ title, description, children }: { title: string; description: string; children: React.ReactNode }) => (
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
       <h3 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: 400, marginBottom: '0.25rem' }}>{title}</h3>
@@ -107,6 +131,25 @@ export function SettingsPage() {
           {isAdmin && <span style={{ color: 'var(--text-muted)' }}> · admin</span>}
         </p>
       </div>
+
+      {/* ── App Startup (desktop only) ───────────────────────────────────── */}
+      {isTauri && (
+        <Section
+          title="App startup"
+          description="Start Twine Launcher automatically when you log in to Windows. The library will be ready in the tray without needing to launch it manually."
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Button size="sm" loading={autostartLoading} onClick={toggleAutostart}>
+              {autostart ? '✓ Launch on startup' : 'Launch on startup'}
+            </Button>
+            {autostart && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Enabled — will start with Windows
+              </span>
+            )}
+          </div>
+        </Section>
+      )}
 
       {/* ── My Theme ──────────────────────────────────────────────────────── */}
       <Section

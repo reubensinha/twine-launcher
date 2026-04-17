@@ -185,7 +185,7 @@ All prefixed with `TWINE_`:
 - [x] Docker container (multi-stage build)
 - [x] Windows desktop app (Tauri 2 + PyInstaller sidecar, NSIS installer)
 - [x] System tray (minimize to tray, Quit from tray menu)
-- [ ] Launch on startup (Windows autostart option in Settings and during installation)
+- [x] Launch on startup (Windows autostart option in Settings)
 - [ ] User-configurable data and games directories (Settings page and Windows installer)
 - [x] Manual save button in game view (always-visible ↑ Save button)
 - [x] Back / forward navigation buttons in game view
@@ -201,3 +201,4 @@ All prefixed with `TWINE_`:
 - [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
 - [x] Opening app from Start Menu/shortcut while already running should focus existing window, not launch second instance
 - [ ] Prepare to upload on Winget
+- [ ] Figure out how to deal with providing software updates.

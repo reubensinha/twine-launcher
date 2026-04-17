@@ -6,7 +6,6 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use tauri_plugin_autostart::MacAppLaunchEvent;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -73,7 +72,7 @@ fn main() {
     tauri::Builder::default()
         // Prevent a second instance from launching. A second launch attempt
         // opens (or focuses) the window in the already-running instance instead.
-        .plugin(tauri_plugin_autostart::init(MacAppLaunchEvent::Login, None))
+        .plugin(tauri_plugin_autostart::init(None))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             open_main_window(app);
         }))

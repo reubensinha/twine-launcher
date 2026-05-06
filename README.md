@@ -24,13 +24,10 @@ cd twine-launcher
 mkdir -p games/my-game
 cp my-game.html games/my-game/index.html
 
-# 3. Set a strong secret key in docker-compose.yml
-#    python -c "import secrets; print(secrets.token_hex(32))"
-
-# 4. Build and run
+# 3. Build and run
 docker compose up -d --build
 
-# 5. Open http://localhost:8080
+# 4. Open http://localhost:8080
 #    First visit triggers the setup wizard to create your admin account.
 ```
 

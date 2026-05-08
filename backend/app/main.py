@@ -2,6 +2,8 @@
 Twine Launcher — main FastAPI application entry point.
 """
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,6 +16,13 @@ from backend.app.core.config import get_settings
 from backend.app.core.database import GameSession, Session, engine, init_db
 from backend.app.core.session_registry import registry
 from backend.app.api import auth, backup, games, saves, sessions, themes, users
+
+_log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+logging.basicConfig(
+    level=_log_level,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 
 settings = get_settings()
 

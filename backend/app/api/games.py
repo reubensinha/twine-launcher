@@ -4,11 +4,14 @@ Games router — CRUD for game metadata and the iframe loader/wrapper page.
 
 import io
 import json
+import logging
 import re
 import shutil
 import zipfile
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -265,7 +268,22 @@ def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
         Save.game_id == game_id,
         Save.user_id == current_user.id,
     ).first()
-    initial_saves = save_record.data if save_record else {}
+    initial_saves = json.loads(save_record.data) if save_record else {}
+
+    logger.info(
+        "session_start game_id=%d user=%s session_id=%d save_record_found=%s save_key_count=%d save_keys=%s",
+        game_id,
+        current_user.username,
+        db_session.id,
+        save_record is not None,
+        len(initial_saves),
+        sorted(initial_saves.keys()),
+    )
+    for k, v in initial_saves.items():
+        logger.debug(
+            "session_start_save_value game_id=%d key=%r value_len=%d value_preview=%r",
+            game_id, k, len(str(v)), str(v)[:200],
+        )
 
     return {
         "session_id": db_session.id,

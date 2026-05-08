@@ -3,8 +3,11 @@ Saves router — per-user localStorage persistence for each game.
 """
 
 import json
+import logging
 from datetime import datetime, UTC
 from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from backend.app.core.database import Game, Save
 from backend.app.core.dependencies import CurrentUser, DBSession
@@ -47,6 +50,14 @@ def upsert_saves(game_id: int, payload: SavePayload, session: DBSession, current
         Save.game_id == game_id,
         Save.user_id == current_user.id,
     ).first()
+    logger.info(
+        "save_sync game_id=%d user_id=%d key_count=%d keys=%s",
+        game_id,
+        current_user.id,
+        len(payload.data),
+        sorted(payload.data.keys()),
+    )
+
     serialized = json.dumps(payload.data)
     now = datetime.now(UTC)
 

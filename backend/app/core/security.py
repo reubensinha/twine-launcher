@@ -3,11 +3,15 @@ Security utilities: password hashing and JWT token creation/verification.
 Uses bcrypt directly (avoids passlib's bcrypt 4.x incompatibility).
 """
 
+import logging
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 import bcrypt
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
+
+logger = logging.getLogger(__name__)
 
 from backend.app.core.config import get_settings
 
@@ -63,7 +67,11 @@ def decode_token(token: str, expected_type: str = "access") -> Optional[dict]:
             if token_type is not None and token_type != "access":
                 return None
         return payload
-    except JWTError:
+    except ExpiredSignatureError:
+        logger.debug("decode_token expired expected_type=%r", expected_type)
+        return None
+    except JWTError as exc:
+        logger.warning("decode_token failed expected_type=%r error=%s", expected_type, exc)
         return None
 
 

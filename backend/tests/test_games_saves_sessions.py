@@ -216,3 +216,121 @@ class TestSaves:
         client.delete(f"/api/v1/saves/{game['id']}", headers=auth_headers(token))
         res = client.get(f"/api/v1/saves/{game['id']}", headers=auth_headers(token))
         assert res.status_code == 404
+
+
+# ── Cross-device save restore ──────────────────────────────────────────────────
+
+class TestSaveRestoreFlow:
+    """Verify that saves written in one session are correctly restored in the next.
+
+    These tests exercise the exact failure path that caused saves to appear
+    missing on a second device: start_session must return initial_saves as a
+    parsed dict, not a raw JSON string.
+    """
+
+    def test_start_session_returns_dict_not_string(self, client, patch_engine):
+        """Regression: start_session must json.loads the DB row, not return it raw."""
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token)
+
+        client.post(
+            f"/api/v1/saves/{game['id']}",
+            json={"data": {"slot1": "chapter2", "history": "a,b,c"}},
+            headers=auth_headers(token),
+        )
+
+        res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert res.status_code == 201
+        data = res.json()
+        assert isinstance(data["initial_saves"], dict), (
+            f"initial_saves must be a dict, got {type(data['initial_saves'])}: {data['initial_saves']!r}"
+        )
+        assert data["initial_saves"] == {"slot1": "chapter2", "history": "a,b,c"}
+
+    def test_start_session_no_saves_returns_empty_dict(self, client, patch_engine):
+        """When no saves exist yet, initial_saves must be an empty dict, not null."""
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token)
+
+        res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert res.status_code == 201
+        data = res.json()
+        assert data["initial_saves"] == {}
+        assert isinstance(data["initial_saves"], dict)
+
+    def test_cross_device_save_restore(self, client, patch_engine):
+        """Simulate Device A saving, closing session, Device B launching.
+
+        The save data written by Device A must appear in initial_saves when
+        Device B (or the same user on a fresh session) calls start_session.
+        """
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token)
+
+        # Device A: open session
+        s1 = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert s1.status_code == 201
+        session_id = s1.json()["session_id"]
+
+        # Device A: game progress is synced to the server
+        save_data = {"slot1": "checkpoint_2", "visited": "room1,room2,room3"}
+        client.post(
+            f"/api/v1/saves/{game['id']}",
+            json={"data": save_data},
+            headers=auth_headers(token),
+        )
+
+        # Device A: close session (pagehide DELETE)
+        close_res = client.delete(f"/api/v1/sessions/{session_id}", headers=auth_headers(token))
+        assert close_res.status_code == 204
+        assert not registry.is_active(game["id"])
+
+        # Device B: start a fresh session — saves must be restored
+        s2 = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert s2.status_code == 201, f"Expected 201, got {s2.status_code}: {s2.text}"
+        restored = s2.json()["initial_saves"]
+        assert restored == save_data, f"Expected {save_data!r}, got {restored!r}"
+
+    def test_session_cleanup_allows_relaunch(self, client, patch_engine):
+        """After DELETE /sessions/{id}, the game must be re-launchable (no 409)."""
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token)
+
+        res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert res.status_code == 201
+        session_id = res.json()["session_id"]
+
+        # Confirm it's locked
+        conflict = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert conflict.status_code == 409
+
+        # Close
+        client.delete(f"/api/v1/sessions/{session_id}", headers=auth_headers(token))
+
+        # Should now be launchable again
+        res2 = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
+        assert res2.status_code == 201, f"Expected 201, got {res2.status_code}: {res2.text}"
+
+    def test_saves_are_scoped_per_user(self, client, patch_engine):
+        """User A's saves must not appear in User B's session initial_saves."""
+        make_user(patch_engine, "admin", "pass", "admin")
+        make_user(patch_engine, "player", "pass", "player")
+        admin_token = login(client, "admin")
+        player_token = login(client, "player")
+        game = create_game(client, admin_token)
+
+        # Admin saves progress
+        client.post(
+            f"/api/v1/saves/{game['id']}",
+            json={"data": {"slot1": "admin-progress"}},
+            headers=auth_headers(admin_token),
+        )
+
+        # Player starts a session — must get an empty dict, not admin's saves
+        res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(player_token))
+        assert res.status_code == 201
+        assert res.json()["initial_saves"] == {}

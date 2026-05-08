@@ -2,7 +2,10 @@
 Auth router — login, logout, token refresh, current user, and first-run setup.
 """
 
+import logging
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -98,6 +101,7 @@ def refresh(request: Request, response: Response, session: DBSession):
     absent or expired the client must log in again.
     """
     token = request.cookies.get(REFRESH_COOKIE)
+    logger.debug("refresh_attempt cookie_present=%s", token is not None)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
     payload = decode_token(token, "refresh")

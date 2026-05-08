@@ -4,7 +4,10 @@ Sessions router — view and force-close active game sessions.
 Admins see all sessions; players see only their own.
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from backend.app.core.database import GameSession, Game, User
 from backend.app.core.dependencies import AdminUser, CurrentUser, DBSession
@@ -47,7 +50,19 @@ def close_session(session_id: int, db: DBSession, current_user: CurrentUser):
     active_sessions = registry.all()
     target = next((s for s in active_sessions if s.session_id == session_id), None)
 
+    logger.info(
+        "session_close_request session_id=%d by_user=%s found_in_registry=%s",
+        session_id,
+        current_user.username,
+        target is not None,
+    )
+
     if not target:
+        logger.warning(
+            "session_close_not_found session_id=%d registry_size=%d",
+            session_id,
+            len(active_sessions),
+        )
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Players can only close their own sessions
@@ -65,3 +80,10 @@ def close_session(session_id: int, db: DBSession, current_user: CurrentUser):
     if db_session:
         db.delete(db_session)
         db.commit()
+
+    logger.info(
+        "session_closed session_id=%d game_id=%d user=%s",
+        session_id,
+        target.game_id,
+        target.username,
+    )

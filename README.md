@@ -184,6 +184,7 @@ All prefixed with `TWINE_`:
 - [x] System tray (minimize to tray, Quit from tray menu)
 - [x] Launch on startup (Windows autostart option in Settings)
 - [ ] User-configurable data and games directories (Settings page and Windows installer)
+- [ ] Add "Allow external access" toggle to desktop app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
 - [x] Manual save button in game view (always-visible ↑ Save button)
 - [x] Back / forward navigation buttons in game view
 - [x] Remember login status (token lifetime extended to 30 days)
@@ -194,6 +195,7 @@ All prefixed with `TWINE_`:
 - [x] Backup save restore doesn't work (Game not found warning)
 - [ ] Multiple users playing the same game simultaneously
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
+- [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
 - [ ] Playnite library add-on
 - [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
 - [x] Opening app from Start Menu/shortcut while already running should focus existing window, not launch second instance

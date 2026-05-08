@@ -67,12 +67,18 @@ class UserUpdate(BaseModel):
         return v
 
 
+class UserPrefsUpdate(BaseModel):
+    """Preferences the current user can update about themselves."""
+    autosave_enabled: bool
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
     role: str
     is_active: bool
     theme: Optional[str] = None
+    autosave_enabled: bool = True
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -82,6 +82,8 @@ export const auth = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     }),
   me: () => request<User>('/auth/me'),
+  updateMe: (prefs: { autosave_enabled: boolean }) =>
+    request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(prefs) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };
 

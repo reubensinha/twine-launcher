@@ -54,6 +54,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="player")  # admin | player
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     theme: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON theme override
+    autosave_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     saves: Mapped[list[Save]] = relationship("Save", back_populates="user", cascade="all, delete-orphan")
@@ -130,9 +131,33 @@ class GameSession(Base):
 
 # ── Session factory ────────────────────────────────────────────────────────────
 
+def _run_alembic_migrations() -> None:
+    """Apply any pending Alembic schema migrations."""
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic import command
+    from sqlalchemy import inspect as sa_inspect
+
+    alembic_dir = Path(__file__).parents[3] / "alembic"
+    cfg = Config()
+    cfg.set_main_option("script_location", str(alembic_dir))
+    cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
+
+    # If this DB has never seen Alembic, stamp at base so all migrations run.
+    # Migrations are idempotent — safe for fresh DBs where create_all already
+    # added the columns, and for old deployments where columns are missing.
+    with engine.connect() as conn:
+        tables = sa_inspect(engine).get_table_names()
+        if "alembic_version" not in tables:
+            command.stamp(cfg, "base")
+
+    command.upgrade(cfg, "head")
+
+
 def init_db() -> None:
-    """Create all tables if they don't exist."""
+    """Create all tables (fresh DBs) then apply any pending Alembic migrations."""
     Base.metadata.create_all(engine)
+    _run_alembic_migrations()
 
 
 def get_session():

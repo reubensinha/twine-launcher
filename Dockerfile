@@ -24,8 +24,10 @@ COPY pyproject.toml ./
 # Install dependencies using uv (no venv — system install for container simplicity)
 RUN uv pip install --system --no-cache .
 
-# Copy backend source
+# Copy backend source and Alembic migrations
 COPY backend/ ./backend/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 # Copy compiled frontend into the location FastAPI serves it from
 COPY --from=frontend-build /app/frontend/dist ./backend/static/ui

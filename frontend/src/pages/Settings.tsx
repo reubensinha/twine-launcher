@@ -7,7 +7,7 @@ import { Button, Toast } from '../components/ui';
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export function SettingsPage() {
-  const { user }                     = useAuthStore();
+  const { user, updatePrefs }        = useAuthStore();
   const { builtins, fetchBuiltins, fetchActive, active, source } = useThemeStore();
   const [globalSaving, setGlobalSaving] = useState<string | null>(null);
   const [userSaving,   setUserSaving]   = useState<string | null>(null);
@@ -18,6 +18,7 @@ export function SettingsPage() {
 
   const [autostart, setAutostart]           = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(false);
+  const [autosaveSaving, setAutosaveSaving] = useState(false);
 
   useEffect(() => { fetchBuiltins(); }, [fetchBuiltins]);
 
@@ -114,6 +115,17 @@ export function SettingsPage() {
     } finally { setAutostartLoading(false); }
   };
 
+  const toggleAutosave = async () => {
+    setAutosaveSaving(true);
+    const next = !(user?.autosave_enabled ?? true);
+    try {
+      await updatePrefs({ autosave_enabled: next });
+      setToast({ msg: next ? 'Autosave enabled.' : 'Autosave disabled.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update autosave setting.', type: 'error' });
+    } finally { setAutosaveSaving(false); }
+  };
+
   const Section = ({ title, description, children }: { title: string; description: string; children: React.ReactNode }) => (
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
       <h3 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: 400, marginBottom: '0.25rem' }}>{title}</h3>
@@ -150,6 +162,23 @@ export function SettingsPage() {
           </div>
         </Section>
       )}
+
+      {/* ── Autosave ──────────────────────────────────────────────────────── */}
+      <Section
+        title="Autosave"
+        description="When enabled, your progress is automatically saved to the server every 3 seconds while you play. When disabled, use the ↑ Save button in the game view to save manually."
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <Button size="sm" loading={autosaveSaving} onClick={toggleAutosave}>
+            {(user?.autosave_enabled ?? true) ? '✓ Autosave on' : 'Autosave off'}
+          </Button>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {(user?.autosave_enabled ?? true)
+              ? 'Saves automatically every 3 seconds'
+              : 'Manual save only — use ↑ Save in the game view'}
+          </span>
+        </div>
+      </Section>
 
       {/* ── My Theme ──────────────────────────────────────────────────────── */}
       <Section

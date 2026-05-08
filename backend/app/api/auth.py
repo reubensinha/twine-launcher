@@ -20,7 +20,7 @@ from backend.app.core.security import (
     hash_password,
     verify_password,
 )
-from backend.app.schemas import SetupRequest, TokenResponse, UserResponse
+from backend.app.schemas import SetupRequest, TokenResponse, UserPrefsUpdate, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -128,3 +128,13 @@ def logout(response: Response):
 @router.get("/me", response_model=UserResponse)
 def me(current_user: CurrentUser):
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(payload: UserPrefsUpdate, session: DBSession, current_user: CurrentUser):
+    """Update the current user's own preferences (autosave, etc.)."""
+    user = session.get(User, current_user.id)
+    user.autosave_enabled = payload.autosave_enabled
+    session.commit()
+    session.refresh(user)
+    return user

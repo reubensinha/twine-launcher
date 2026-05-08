@@ -5,10 +5,11 @@ import type { User } from '../types';
 interface AuthState {
   user: User | null;
   loading: boolean;
-  hydrate: () => Promise<void>;
-  login:   (username: string, password: string) => Promise<void>;
-  setup:   (username: string, password: string) => Promise<void>;
-  logout:  () => void;
+  hydrate:     () => Promise<void>;
+  login:       (username: string, password: string) => Promise<void>;
+  setup:       (username: string, password: string) => Promise<void>;
+  logout:      () => void;
+  updatePrefs: (prefs: { autosave_enabled: boolean }) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -45,5 +46,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null });
     // Clear the server-side HttpOnly cookie (can't be deleted from JS directly).
     authApi.logout().catch(() => {});
+  },
+
+  updatePrefs: async (prefs) => {
+    const user = await authApi.updateMe(prefs);
+    set({ user });
   },
 }));

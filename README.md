@@ -175,7 +175,20 @@ All prefixed with `TWINE_`:
 | `TWINE_ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                              | JWT lifetime (24h)            |
 | `TWINE_DEBUG`                       | `false`                             | Enable FastAPI debug mode     |
 
-## Roadmap
+## Short Term Roadmap
+
+- [ ] User-configurable data and games directories (Settings page and Windows installer)
+- [ ] Add "Allow external access" toggle to desktop app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
+- [ ] Better settings page
+- [ ] Make autosave toggleable in user settings
+- [ ] Windows desktop shortcuts for games (Add to desktop button in context menu for game entry in library).
+- [ ] Make password optional if only 1 user
+- [ ] Multiple users playing the same game simultaneously
+- [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
+- [ ] Prepare to upload on Winget
+- [ ] Figure out how to deal with providing software updates.
+
+## Completed
 
 - [x] Backend API (auth, games, saves, sessions, backup, themes)
 - [x] React frontend (Library, Login, Setup, Settings, Admin pages)
@@ -183,21 +196,17 @@ All prefixed with `TWINE_`:
 - [x] Windows desktop app (Tauri 2 + PyInstaller sidecar, NSIS installer)
 - [x] System tray (minimize to tray, Quit from tray menu)
 - [x] Launch on startup (Windows autostart option in Settings)
-- [ ] User-configurable data and games directories (Settings page and Windows installer)
-- [ ] Add "Allow external access" toggle to desktop app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
+- [x] Make Saving indicator bigger and longer when saving.
 - [x] Manual save button in game view (always-visible ↑ Save button)
 - [x] Back / forward navigation buttons in game view
 - [x] Remember login status (token lifetime extended to 30 days)
-- [ ] Better settings page
-- [x] Make Saving indicator bigger and longer when saving.
-- [ ] Windows desktop shortcuts for games.
-- [ ] Make password optional if only 1 user
 - [x] Backup save restore doesn't work (Game not found warning)
-- [ ] Multiple users playing the same game simultaneously
-- [ ] Git-based game sources (add games by GitHub/GitLab URL)
-- [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
-- [ ] Playnite library add-on
 - [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
 - [x] Opening app from Start Menu/shortcut while already running should focus existing window, not launch second instance
-- [ ] Prepare to upload on Winget
-- [ ] Figure out how to deal with providing software updates.
+
+## Long Term Roadmap
+
+- [ ] Playnite library add-on
+- [ ] Git-based game sources (add games by GitHub/GitLab URL)
+- [ ] Accessible quick settings when inside a game
+- [ ] Per game settings

@@ -5,6 +5,7 @@ export interface User {
   username: string;
   role: 'admin' | 'player';
   is_active: boolean;
+  autosave_enabled: boolean;
   created_at: string;
 }
 

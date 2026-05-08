@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { games as gamesApi, saves as savesApi, getToken } from '../api';
+import { useAuthStore } from '../store/auth';
 import { Spinner } from '../components/ui';
 
 const POLL_MS = 3000;
@@ -25,6 +26,7 @@ export function GamePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const gameId = parseInt(id ?? '0', 10);
+  const { user } = useAuthStore();
 
   const [gameInfo, setGameInfo] = useState<{
     session_id: number; game_url: string; game_name: string;
@@ -39,6 +41,9 @@ export function GamePage() {
   const isSyncingRef  = useRef(false);
   // Holds session info when injection fails so startNewGame can still launch the game
   const pendingInfoRef = useRef<typeof gameInfo>(null);
+  // Captures autosave preference at game-start; ref avoids re-triggering the gameInfo effect
+  const autosaveEnabledRef = useRef<boolean>(true);
+  autosaveEnabledRef.current = user?.autosave_enabled ?? true;
   const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'restored' | 'error'>('');
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
@@ -137,8 +142,10 @@ export function GamePage() {
     }
 
     frame.src = gameInfo.game_url;
-    const interval = setInterval(() => syncSaves(), POLL_MS);
-    return () => clearInterval(interval);
+    const interval = autosaveEnabledRef.current
+      ? setInterval(() => syncSaves(), POLL_MS)
+      : null;
+    return () => { if (interval !== null) clearInterval(interval); };
   }, [gameInfo, syncSaves]);
 
   // ── In-game navigation ──────────────────────────────────────────────────────

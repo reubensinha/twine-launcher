@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { games as gamesApi, getToken } from '../api';
+import { games as gamesApi, saves as savesApi, getToken } from '../api';
 import { Spinner } from '../components/ui';
 
 const POLL_MS = 3000;
@@ -37,7 +37,10 @@ export function GamePage() {
   const lastSnapRef   = useRef<string>('{}');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncingRef  = useRef(false);
-  const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'error'>('');
+  // Holds session info when injection fails so startNewGame can still launch the game
+  const pendingInfoRef = useRef<typeof gameInfo>(null);
+  const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'restored' | 'error'>('');
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // ── Delete session on full page unload (window close) ──────────────────────
   useEffect(() => {
@@ -60,9 +63,23 @@ export function GamePage() {
   useEffect(() => {
     gamesApi.startSession(gameId)
       .then(info => {
+        // Step 2: inject saves synchronously — game must not start if this fails
+        const saves = Object.entries(info.initial_saves)
+          .filter(([k]) => k !== 'twine_access_token');
+        if (saves.length > 0) {
+          try {
+            for (const [k, v] of saves) window.localStorage.setItem(k, v);
+          } catch (err) {
+            // Injection failed — store info for startNewGame, block game start
+            sessionIdRef.current = info.session_id;
+            pendingInfoRef.current = info;
+            setRestoreError(err instanceof Error ? err.message : String(err));
+            return;
+          }
+        }
         sessionIdRef.current = info.session_id;
-        lastSnapRef.current  = JSON.stringify(info.initial_saves);
-        setGameInfo(info);
+        lastSnapRef.current  = JSON.stringify(Object.fromEntries(saves));
+        setGameInfo(info); // Step 3: triggers game start only after successful injection
       })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to start game'));
 
@@ -82,30 +99,20 @@ export function GamePage() {
   // ── Sync saves to server ────────────────────────────────────────────────────
   const syncSaves = useCallback(async (force = false) => {
     if (isSyncingRef.current) return;
-    const frame = frameRef.current;
-    if (!frame) return;
     isSyncingRef.current = true;
     try {
-      const iLS = frame.contentWindow?.localStorage;
-      if (!iLS) return;
+      // Read from parent window.localStorage — same bucket as the game iframe (same origin).
+      // Avoids SecurityError from crossing the iframe boundary via contentWindow.
       const snap: Record<string, string> = {};
-      for (let i = 0; i < iLS.length; i++) {
-        const k = iLS.key(i)!;
-        snap[k] = iLS.getItem(k)!;
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i)!;
+        if (k === 'twine_access_token') continue;
+        snap[k] = window.localStorage.getItem(k)!;
       }
       const serialized = JSON.stringify(snap);
       if (!force && serialized === lastSnapRef.current) return;
       setSyncState('syncing');
-      const token = getToken();
-      const res = await fetch(`/api/v1/saves/${gameId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ data: snap }),
-      });
-      if (!res.ok) throw new Error(res.statusText);
+      await savesApi.sync(gameId, snap);
       lastSnapRef.current = serialized;
       setSyncState('saved');
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -117,33 +124,35 @@ export function GamePage() {
     }
   }, [gameId]);
 
-  // ── Inject saves → navigate iframe → start polling ─────────────────────────
+  // ── Start game + polling (saves already injected in startSession.then) ───────
   useEffect(() => {
     if (!gameInfo || !frameRef.current) return;
     const frame = frameRef.current;
 
-    const onFirstLoad = () => {
-      try {
-        const iLS = frame.contentWindow!.localStorage;
-        for (const [k, v] of Object.entries(gameInfo.initial_saves)) {
-          iLS.setItem(k, v);
-        }
-      } catch { /* same-origin guard */ }
-      frame.src = gameInfo.game_url;
-    };
-    frame.addEventListener('load', onFirstLoad, { once: true });
-    frame.src = 'about:blank';
+    // Show badge only when saves were actually injected (lastSnapRef reflects injected state)
+    if (lastSnapRef.current !== '{}') {
+      setSyncState('restored');
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'restored' ? '' : s), 2500);
+    }
 
+    frame.src = gameInfo.game_url;
     const interval = setInterval(() => syncSaves(), POLL_MS);
-    return () => {
-      clearInterval(interval);
-      frame.removeEventListener('load', onFirstLoad);
-    };
+    return () => clearInterval(interval);
   }, [gameInfo, syncSaves]);
 
   // ── In-game navigation ──────────────────────────────────────────────────────
   const goBack    = () => frameRef.current?.contentWindow?.history.back();
   const goForward = () => frameRef.current?.contentWindow?.history.forward();
+
+  // ── Start fresh when save injection failed ──────────────────────────────────
+  const startNewGame = useCallback(() => {
+    lastSnapRef.current = '{}';
+    const info = pendingInfoRef.current;
+    pendingInfoRef.current = null;
+    setRestoreError(null);
+    if (info) setGameInfo(info); // triggers gameInfo useEffect → starts game
+  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (error) {
@@ -155,6 +164,41 @@ export function GamePage() {
       }}>
         <p style={{ color: 'var(--danger, #c0392b)', fontFamily: 'var(--font-ui)' }}>{error}</p>
         <button onClick={() => navigate('/')} style={overlayBtn()}>← Back to Library</button>
+      </div>
+    );
+  }
+
+  if (restoreError !== null) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: '#111', zIndex: 100,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: '1.5rem',
+      }}>
+        <p style={{
+          fontFamily: 'monospace', fontSize: 14, color: 'rgba(220,100,100,0.95)',
+          textAlign: 'center', maxWidth: 460, lineHeight: 1.6, margin: 0,
+        }}>
+          Your saves are stored on the server but could not be loaded into this
+          browser session.
+          {restoreError && (
+            <><br /><br />
+            <span style={{ color: 'rgba(200,80,80,0.8)', fontSize: 12 }}>
+              Error: {restoreError}
+            </span></>
+          )}
+          <br /><br />
+          You can return to the library, or start a new game
+          (your server-side saves will not be affected unless you play and save again).
+        </p>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={() => navigate('/')} style={overlayBtn()}>
+            ← Back to Library
+          </button>
+          <button onClick={startNewGame} style={overlayBtn({ background: 'rgba(160,40,40,0.7)' })}>
+            Start New Game
+          </button>
+        </div>
       </div>
     );
   }
@@ -199,6 +243,16 @@ export function GamePage() {
         position: 'fixed', bottom: 12, right: 14, zIndex: 51,
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
+        {syncState === 'restored' && (
+          <span style={{
+            fontFamily: 'monospace', fontSize: 13, fontWeight: 600,
+            color: '#fff', background: 'rgba(30,80,180,0.85)',
+            padding: '5px 10px', borderRadius: 5,
+            backdropFilter: 'blur(4px)',
+          }}>
+            ↓ Saves restored
+          </span>
+        )}
         {syncState === 'error' && (
           <span style={{
             fontFamily: 'monospace', fontSize: 13, fontWeight: 600,

@@ -123,6 +123,8 @@ export const sessions = {
 };
 
 export const saves = {
+  sync: (gameId: number, data: Record<string, string>) =>
+    request<unknown>(`/saves/${gameId}`, { method: 'POST', body: JSON.stringify({ data }) }),
   delete: (gameId: number) => request<void>(`/saves/${gameId}`, { method: 'DELETE' }),
 };
 

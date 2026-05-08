@@ -6,11 +6,12 @@ services:
     ports:
       - "8080:8000"       # Change 8080 to your preferred host port
     volumes:
-      - ./games:/games    # Drop compiled Twine HTML files here
-      - ./data:/data      # SQLite DB and persistent data
+      - ~/containers/twine/games:/games    # Drop compiled Twine HTML files here
+      - ~/containers/twine/data:/data      # SQLite DB and persistent data
     environment:
       # A secret key is auto-generated on first run and stored in ./data/.secret_key
       # To use a specific key instead, uncomment the line below:
       # TWINE_SECRET_KEY: "your-key-here"
       TWINE_DATABASE_URL: "sqlite:////data/twine_launcher.db"
       TWINE_GAMES_DIR: "/games"
+      LOG_LEVEL: "DEBUG"    # Remove after diagnosing save restore issue

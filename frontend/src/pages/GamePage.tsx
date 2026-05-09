@@ -59,6 +59,9 @@ export function GamePage() {
         keepalive: true,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      const jwt2 = localStorage.getItem('twine_access_token');
+      localStorage.clear();
+      if (jwt2) localStorage.setItem('twine_access_token', jwt2);
     };
     window.addEventListener('pagehide', handlePageHide);
     return () => window.removeEventListener('pagehide', handlePageHide);
@@ -71,6 +74,11 @@ export function GamePage() {
         // Step 2: inject saves synchronously — game must not start if this fails
         const saves = Object.entries(info.initial_saves)
           .filter(([k]) => k !== 'twine_access_token');
+        // Evict stale saves from previous sessions — localStorage is a working
+        // buffer; the server holds the authoritative copy.
+        const jwt = localStorage.getItem('twine_access_token');
+        localStorage.clear();
+        if (jwt) localStorage.setItem('twine_access_token', jwt);
         if (saves.length > 0) {
           try {
             for (const [k, v] of saves) window.localStorage.setItem(k, v);
@@ -97,6 +105,9 @@ export function GamePage() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         sessionIdRef.current = null;
+        const jwt3 = localStorage.getItem('twine_access_token');
+        localStorage.clear();
+        if (jwt3) localStorage.setItem('twine_access_token', jwt3);
       }
     };
   }, [gameId]);

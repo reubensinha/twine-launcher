@@ -38,6 +38,8 @@ def main() -> None:
     # pathlib joining with an absolute path discards the left-hand side, so
     # setting TWINE_STATIC_UI_DIR to an absolute path works transparently with
     # the existing:  ui_dir = Path(__file__).parent.parent / settings.static_ui_dir
+    log_file = None  # set below in frozen mode
+
     if getattr(sys, "frozen", False):
         meipass: str = getattr(sys, "_MEIPASS", "")
         os.environ["TWINE_STATIC_UI_DIR"] = os.path.join(meipass, "static_ui")
@@ -54,14 +56,24 @@ def main() -> None:
         if sys.stderr is None:
             sys.stderr = log_file
 
+    def _w(msg: str) -> None:
+        """Write directly to the log file handle (works even if sys.stdout is disrupted)."""
+        if log_file is not None:
+            log_file.write(msg + "\n")
+            log_file.flush()
+
     # ── Import and run uvicorn AFTER env vars are set ──────────────────────────
     # Use the direct import form (not the "module:attr" string form) so that
     # PyInstaller's static analysis can trace and bundle the entire backend
     # package.  The string form uses importlib at runtime, which PyInstaller
     # cannot follow, resulting in ModuleNotFoundError when frozen.
+    _w("[2a] importing uvicorn")
     import uvicorn  # noqa: PLC0415
+
+    _w("[2b] importing backend.app.main")
     from backend.app.main import app  # noqa: PLC0415
 
+    _w(f"[2c] imports ok — binding {args.host}:{args.port}")
     print(f"[2] starting uvicorn on {args.host}:{args.port}", flush=True)
 
     uvicorn.run(
@@ -71,6 +83,7 @@ def main() -> None:
         log_level="info",
     )
 
+    _w("[3] uvicorn stopped")
     print("[3] uvicorn stopped", flush=True)
 
 

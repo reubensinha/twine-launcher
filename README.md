@@ -177,8 +177,8 @@ All prefixed with `TWINE_`:
 
 ## Short Term Roadmap
 
-- [ ] User-configurable data and games directories (Settings page and During first time startup)
-- [ ] Add "Allow external access" toggle to desktop app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
+- [x] User-configurable games directory (native folder picker on first launch; changeable in Settings)
+- [ ] Add "Allow external access" toggle to windows app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
 - [ ] Better settings page
 - [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
 - [ ] Prepare to upload on Winget

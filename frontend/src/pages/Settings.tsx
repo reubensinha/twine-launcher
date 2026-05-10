@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { themeApi } from '../api';
+import { configApi, themeApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
 import { Button, Toast } from '../components/ui';
@@ -19,6 +19,9 @@ export function SettingsPage() {
   const [autostart, setAutostart]           = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(false);
   const [autosaveSaving, setAutosaveSaving] = useState(false);
+  const [gamesDirCfg,  setGamesDirCfg]  = useState<{ games_dir: string; default_games_dir?: string } | null>(null);
+  const [editGamesDir, setEditGamesDir] = useState('');
+  const [dirSaving,    setDirSaving]    = useState(false);
 
   useEffect(() => { fetchBuiltins(); }, [fetchBuiltins]);
 
@@ -27,6 +30,17 @@ export function SettingsPage() {
     import('@tauri-apps/plugin-autostart').then(({ isEnabled }) =>
       isEnabled().then(setAutostart)
     );
+  }, []);
+
+  useEffect(() => {
+    if (isTauri) {
+      import('@tauri-apps/api/core').then(({ invoke }) =>
+        invoke<{ games_dir: string; default_games_dir: string }>('get_games_dir')
+          .then(cfg => { setGamesDirCfg(cfg); setEditGamesDir(cfg.games_dir); })
+      );
+    } else {
+      configApi.get().then(cfg => setGamesDirCfg(cfg)).catch(() => {});
+    }
   }, []);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -126,6 +140,18 @@ export function SettingsPage() {
     } finally { setAutosaveSaving(false); }
   };
 
+  const saveGamesDir = async () => {
+    setDirSaving(true);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_games_dir', { gamesDir: editGamesDir });
+      setGamesDirCfg(c => c ? { ...c, games_dir: editGamesDir } : c);
+      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : 'Failed to save', type: 'error' });
+    } finally { setDirSaving(false); }
+  };
+
   const Section = ({ title, description, children }: { title: string; description: string; children: React.ReactNode }) => (
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
       <h3 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: 400, marginBottom: '0.25rem' }}>{title}</h3>
@@ -179,6 +205,38 @@ export function SettingsPage() {
           </span>
         </div>
       </Section>
+
+      {/* ── Games directory ───────────────────────────────────────────── */}
+      {gamesDirCfg && (
+        <Section
+          title="Games directory"
+          description={isTauri
+            ? "Where Twine Launcher looks for your HTML game files. Changes take effect after quitting and relaunching."
+            : "The folder containing Twine HTML game files (set via TWINE_GAMES_DIR in docker-compose.yml)."}
+        >
+          {isTauri ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <input
+                value={editGamesDir}
+                onChange={e => setEditGamesDir(e.target.value)}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: 'var(--surface2)', color: 'var(--text)',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                  padding: '0.45rem 0.65rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <Button size="sm" loading={dirSaving} onClick={saveGamesDir}>Save</Button>
+              </div>
+            </div>
+          ) : (
+            <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {gamesDirCfg.games_dir}
+            </code>
+          )}
+        </Section>
+      )}
 
       {/* ── My Theme ──────────────────────────────────────────────────────── */}
       <Section

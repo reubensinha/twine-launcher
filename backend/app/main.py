@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from backend.app.core.config import get_settings
 from backend.app.core.database import GameSession, Session, engine, init_db
 from backend.app.core.session_registry import registry
-from backend.app.api import auth, backup, games, saves, sessions, themes, users
+from backend.app.api import auth, backup, config, games, saves, sessions, themes, users
 
 _log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
 logging.basicConfig(
@@ -72,6 +72,7 @@ app.include_router(saves.router,    prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)
 app.include_router(backup.router,   prefix=API_PREFIX)
 app.include_router(themes.router,   prefix=API_PREFIX)
+app.include_router(config.router,   prefix=API_PREFIX)
 
 # ── Static game files ──────────────────────────────────────────────────────────
 # Served at /static/games/{path} — same origin as the wrapper page,

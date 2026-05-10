@@ -68,6 +68,32 @@ fn open_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[tauri::command]
+fn get_games_dir(handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let app_data    = handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let config_path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let custom: Option<serde_json::Value> = std::fs::read_to_string(&config_path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    let default_games = app_data.join("games").to_string_lossy().to_string();
+    Ok(serde_json::json!({
+        "games_dir": custom.as_ref()
+            .and_then(|c| c["games_dir"].as_str())
+            .unwrap_or(&default_games),
+        "default_games_dir": default_games,
+    }))
+}
+
+#[tauri::command]
+fn save_games_dir(games_dir: String, handle: tauri::AppHandle) -> Result<(), String> {
+    let path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path,
+        serde_json::json!({"games_dir": games_dir}).to_string()
+    ).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         // Prevent a second instance from launching. A second launch attempt
@@ -80,10 +106,43 @@ fn main() {
         .manage(SidecarState(Mutex::new(None)))
         .manage(AppPort(Mutex::new(0))) // real port written in setup
         .setup(|app| {
-            // ── Resolve data directories ───────────────────────────────────────
-            let app_data = app.path().app_data_dir()?;
-            let data_dir = app_data.join("data");
-            let games_dir = app_data.join("games");
+            // ── Resolve data and games directories ────────────────────────────
+            let app_data    = app.path().app_data_dir()?;
+            let data_dir    = app_data.join("data"); // fixed — never user-configurable
+            let config_path = app.path().app_config_dir()?.join("sidecar-config.json");
+
+            let games_dir: std::path::PathBuf = if config_path.exists() {
+                // Subsequent launch — use saved games directory.
+                let raw = std::fs::read_to_string(&config_path).unwrap_or_default();
+                let val: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+                val["games_dir"].as_str()
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| app_data.join("games"))
+            } else {
+                // First launch — require the user to choose.
+                let chosen = rfd::FileDialog::new()
+                    .set_title("Twine Launcher — Choose Games Directory")
+                    .set_description(
+                        "Select the folder where your Twine HTML game files are stored. \
+                         You can change this later in Settings."
+                    )
+                    .pick_folder();
+                let Some(path) = chosen else {
+                    // User cancelled — exit cleanly. Prompts again on next launch.
+                    app.cleanup_before_exit();
+                    return Ok(());
+                };
+                // Persist the chosen path.
+                if let Some(parent) = config_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(
+                    &config_path,
+                    serde_json::json!({"games_dir": path.to_string_lossy()}).to_string(),
+                );
+                path
+            };
+
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(&games_dir)?;
 
@@ -156,6 +215,7 @@ fn main() {
         // No on_window_event needed: closing the window destroys the WebviewWindow
         // (like closing a browser tab). The pagehide event fires in WebView2,
         // which the frontend uses to clean up active game sessions.
+        .invoke_handler(tauri::generate_handler![get_games_dir, save_games_dir])
         .build(tauri::generate_context!())
         .expect("error while building Twine Launcher")
         .run(|app, event| match event {

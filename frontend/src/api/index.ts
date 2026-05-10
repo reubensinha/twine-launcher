@@ -181,6 +181,10 @@ export const backup = {
   },
 };
 
+export const configApi = {
+  get: () => request<{ games_dir: string }>('/config'),
+};
+
 export const themeApi = {
   builtins: () => request<Array<{ id: string; name: string; description?: string } & Record<string, string>>>('/themes/builtins'),
   active: () => request<{ source: string; theme: Record<string, string> }>('/themes/active'),

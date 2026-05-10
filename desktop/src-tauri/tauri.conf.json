@@ -40,6 +40,11 @@
     ],
     "externalBin": [
       "binaries/twine-launcher-backend"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "template": "nsis/installer.nsi"
+      }
+    }
   }
 }

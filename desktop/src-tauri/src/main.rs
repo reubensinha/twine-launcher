@@ -119,24 +119,16 @@ fn main() {
                     .map(std::path::PathBuf::from)
                     .unwrap_or_else(|| app_data.join("games"))
             } else {
-                // First launch — require the user to choose.
-                let chosen = rfd::FileDialog::new()
-                    .set_title("Twine Launcher — Choose Games Directory")
-                    .pick_folder();
-                let Some(path) = chosen else {
-                    // User cancelled — exit cleanly. Prompts again on next launch.
-                    app.cleanup_before_exit();
-                    return Ok(());
-                };
-                // Persist the chosen path.
+                // No config — NSIS installer should have written one; fall back gracefully.
+                let default = app_data.join("games");
                 if let Some(parent) = config_path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 let _ = std::fs::write(
                     &config_path,
-                    serde_json::json!({"games_dir": path.to_string_lossy().as_ref()}).to_string(),
+                    serde_json::json!({"games_dir": default.to_string_lossy().as_ref()}).to_string(),
                 );
-                path
+                default
             };
 
             std::fs::create_dir_all(&data_dir)?;

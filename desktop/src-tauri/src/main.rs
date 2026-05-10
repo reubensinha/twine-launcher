@@ -160,7 +160,28 @@ fn main() {
                 // Keep rx alive so the sidecar stdout pipe stays open.
                 let _rx = rx;
 
-                wait_for_port(port, 60, Duration::from_millis(500));
+                // Show a loading screen immediately — PyInstaller one-file
+                // extraction and AV scanning can make first launch slow.
+                if let Some(w) = handle.get_webview_window("main") {
+                    let _ = w.eval(concat!(
+                        "document.open('text/html');",
+                        "document.write(",
+                        "'<body style=\"font-family:sans-serif;padding:2rem;background:#1a1a2e;",
+                        "color:#e0e0e0;display:flex;align-items:center;justify-content:center;",
+                        "height:100vh;margin:0\">",
+                        "<div style=\"text-align:center\">",
+                        "<h2>Starting Twine Launcher...</h2>",
+                        "<p style=\"color:#888\">First launch may take a minute.</p>",
+                        "</div></body>'",
+                        ");",
+                        "document.close();"
+                    ));
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+
+                // Wait up to 2 minutes — first-run extraction can be slow.
+                wait_for_port(port, 240, Duration::from_millis(500));
 
                 if let Some(window) = handle.get_webview_window("main") {
                     if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
@@ -172,7 +193,7 @@ fn main() {
                             "document.write(",
                             "'<body style=\"font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e0e0e0\">",
                             "<h2>Twine Launcher failed to start</h2>",
-                            "<p>The backend server did not start within 30 seconds.</p>",
+                            "<p>The backend server did not start within 2 minutes.</p>",
                             "<p>Check the log for details:<br><br>",
                             "<code style=\"background:#0d0d1a;padding:4px 8px;border-radius:4px\">",
                             "%AppData%\\\\com.twinelauncher.desktop\\\\data\\\\backend.log",

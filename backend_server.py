@@ -44,11 +44,13 @@ def main() -> None:
 
         # With console=False in PyInstaller, sys.stdout/stderr are None.
         # Uvicorn's log formatter calls .isatty() on the stream and crashes.
-        # Redirect to devnull so logging initialises without error.
+        # Write to a log file so startup errors are visible for diagnostics.
+        log_path = os.path.join(args.data_dir, "backend.log") if args.data_dir else os.devnull
+        log_file = open(log_path, "w", buffering=1, encoding="utf-8", errors="replace")
         if sys.stdout is None:
-            sys.stdout = open(os.devnull, "w")
+            sys.stdout = log_file
         if sys.stderr is None:
-            sys.stderr = open(os.devnull, "w")
+            sys.stderr = log_file
 
     # ── Import and run uvicorn AFTER env vars are set ──────────────────────────
     # Use the direct import form (not the "module:attr" string form) so that

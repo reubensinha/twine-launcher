@@ -163,8 +163,25 @@ fn main() {
                 wait_for_port(port, 60, Duration::from_millis(500));
 
                 if let Some(window) = handle.get_webview_window("main") {
-                    let url = format!("http://127.0.0.1:{}", port);
-                    let _ = window.eval(&format!("window.location.replace('{}')", url));
+                    if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
+                        let url = format!("http://127.0.0.1:{}", port);
+                        let _ = window.eval(&format!("window.location.replace('{}')", url));
+                    } else {
+                        let _ = window.eval(concat!(
+                            "document.open('text/html');",
+                            "document.write(",
+                            "'<body style=\"font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e0e0e0\">",
+                            "<h2>Twine Launcher failed to start</h2>",
+                            "<p>The backend server did not start within 30 seconds.</p>",
+                            "<p>Check the log for details:<br><br>",
+                            "<code style=\"background:#0d0d1a;padding:4px 8px;border-radius:4px\">",
+                            "%AppData%\\\\com.twinelauncher.desktop\\\\data\\\\backend.log",
+                            "</code></p>",
+                            "</body>'",
+                            ");",
+                            "document.close();"
+                        ));
+                    }
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

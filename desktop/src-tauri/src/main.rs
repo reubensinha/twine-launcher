@@ -98,7 +98,7 @@ fn main() {
     tauri::Builder::default()
         // Prevent a second instance from launching. A second launch attempt
         // opens (or focuses) the window in the already-running instance instead.
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::Apple, None))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             open_main_window(app);
         }))

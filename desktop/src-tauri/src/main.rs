@@ -98,7 +98,7 @@ fn main() {
     tauri::Builder::default()
         // Prevent a second instance from launching. A second launch attempt
         // opens (or focuses) the window in the already-running instance instead.
-        .plugin(tauri_plugin_autostart::init(None))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::Apple, None))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             open_main_window(app);
         }))
@@ -122,10 +122,6 @@ fn main() {
                 // First launch — require the user to choose.
                 let chosen = rfd::FileDialog::new()
                     .set_title("Twine Launcher — Choose Games Directory")
-                    .set_description(
-                        "Select the folder where your Twine HTML game files are stored. \
-                         You can change this later in Settings."
-                    )
                     .pick_folder();
                 let Some(path) = chosen else {
                     // User cancelled — exit cleanly. Prompts again on next launch.
@@ -138,7 +134,7 @@ fn main() {
                 }
                 let _ = std::fs::write(
                     &config_path,
-                    serde_json::json!({"games_dir": path.to_string_lossy()}).to_string(),
+                    serde_json::json!({"games_dir": path.to_string_lossy().as_ref()}).to_string(),
                 );
                 path
             };

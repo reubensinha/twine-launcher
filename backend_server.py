@@ -47,6 +47,8 @@ def main() -> None:
         # Write to a log file so startup errors are visible for diagnostics.
         log_path = os.path.join(args.data_dir, "backend.log") if args.data_dir else os.devnull
         log_file = open(log_path, "w", buffering=1, encoding="utf-8", errors="replace")
+        log_file.write(f"[1] frozen startup — port={args.port} data_dir={args.data_dir}\n")
+        log_file.flush()
         if sys.stdout is None:
             sys.stdout = log_file
         if sys.stderr is None:
@@ -60,12 +62,16 @@ def main() -> None:
     import uvicorn  # noqa: PLC0415
     from backend.app.main import app  # noqa: PLC0415
 
+    print(f"[2] starting uvicorn on {args.host}:{args.port}", flush=True)
+
     uvicorn.run(
         app,
         host=args.host,
         port=args.port,
-        log_level="warning",
+        log_level="info",
     )
+
+    print("[3] uvicorn stopped", flush=True)
 
 
 if __name__ == "__main__":

@@ -82,9 +82,55 @@ def main() -> None:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         _w("[2d] set WindowsSelectorEventLoopPolicy")
 
-    # Ensure any log messages that miss our sys.stderr handler still land in the file.
+    # ── Wire logging directly to log_file so uvicorn errors are visible ────────
     import logging as _logging
-    _logging.basicConfig(stream=log_file or sys.stderr, level=_logging.DEBUG)
+    if log_file is not None:
+        # Clear whatever basicConfig the backend.app.main import set up, then
+        # attach our file handle to the root logger.  Pass a minimal log_config
+        # to uvicorn.run() so uvicorn does NOT override this with its own
+        # StreamHandler(sys.stderr) configuration.
+        _root = _logging.getLogger()
+        _root.setLevel(_logging.DEBUG)
+        _root.handlers.clear()
+        _lh = _logging.StreamHandler(log_file)
+        _lh.setFormatter(_logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        _root.addHandler(_lh)
+        for _ln in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "sqlalchemy.engine"):
+            _lg = _logging.getLogger(_ln)
+            _lg.handlers.clear()
+            _lg.propagate = True
+            _lg.setLevel(_logging.DEBUG)
+        _uvicorn_log_cfg = {"version": 1, "disable_existing_loggers": False}
+        _w("[2e] logging wired to log_file")
+    else:
+        _logging.basicConfig(stream=sys.stderr, level=_logging.DEBUG)
+        _uvicorn_log_cfg = None
+
+    # ── Pre-flight: run lifespan operations synchronously to surface errors ─────
+    # This mirrors what FastAPI's lifespan does on startup so any exception
+    # appears in the log with a full traceback BEFORE uvicorn swallows it.
+    _w("[2f] pre-flight: init_db + session clear + games dir")
+    try:
+        from backend.app.core.database import (  # noqa: PLC0415
+            GameSession, Session, engine, init_db,
+        )
+        from backend.app.core.config import get_settings as _get_settings  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        init_db()
+        _w("[2f] init_db ok")
+
+        with Session(engine) as _db:
+            _db.query(GameSession).delete()
+            _db.commit()
+        _w("[2f] session clear ok")
+
+        _Path(_get_settings().games_dir).mkdir(parents=True, exist_ok=True)
+        _w("[2f] games dir ok — pre-flight passed")
+    except Exception:
+        import traceback as _tb
+        _w("[2f] pre-flight FAILED:\n" + _tb.format_exc())
+        # Fall through — uvicorn will also fail, but now we have the traceback.
 
     try:
         uvicorn.run(
@@ -92,6 +138,7 @@ def main() -> None:
             host=args.host,
             port=args.port,
             log_level="info",
+            log_config=_uvicorn_log_cfg,
         )
         _w("[3] uvicorn returned normally")
     except BaseException:

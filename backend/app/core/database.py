@@ -132,18 +132,13 @@ class GameSession(Base):
 # ── Session factory ────────────────────────────────────────────────────────────
 
 def _run_alembic_migrations() -> None:
-    """Apply any pending Alembic schema migrations."""
-    import sys
+    """Apply any pending Alembic schema migrations (dev/Docker only)."""
     from pathlib import Path
     from alembic.config import Config
     from alembic import command
     from sqlalchemy import inspect as sa_inspect
 
-    if getattr(sys, "frozen", False):
-        # PyInstaller bundles alembic/ into sys._MEIPASS (see backend.spec datas).
-        alembic_dir = Path(getattr(sys, "_MEIPASS", "")) / "alembic"
-    else:
-        alembic_dir = Path(__file__).parents[3] / "alembic"
+    alembic_dir = Path(__file__).parents[3] / "alembic"
     cfg = Config()
     cfg.set_main_option("script_location", str(alembic_dir))
     cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
@@ -159,10 +154,40 @@ def _run_alembic_migrations() -> None:
     command.upgrade(cfg, "head")
 
 
+def _apply_schema_patches_frozen() -> None:
+    """Apply schema migrations without Alembic for the PyInstaller frozen binary.
+
+    Alembic has too many dynamic internal imports to bundle reliably with
+    PyInstaller.  This function mirrors each Alembic migration using plain
+    SQLAlchemy + raw SQL, which is already fully bundled.  Every operation
+    is idempotent — safe to run on both fresh and pre-existing databases.
+
+    Keep this in sync with alembic/versions/ when adding new migrations.
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+
+    inspector = sa_inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return  # fresh DB — create_all already applied the full current schema
+
+    col_names = {c["name"] for c in inspector.get_columns("users")}
+
+    with engine.begin() as conn:
+        # mirrors 0001_add_autosave_enabled.py
+        if "autosave_enabled" not in col_names:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN autosave_enabled BOOLEAN NOT NULL DEFAULT '1'"
+            ))
+
+
 def init_db() -> None:
-    """Create all tables (fresh DBs) then apply any pending Alembic migrations."""
+    """Create all tables (fresh DBs) then apply any pending schema migrations."""
+    import sys
     Base.metadata.create_all(engine)
-    _run_alembic_migrations()
+    if getattr(sys, "frozen", False):
+        _apply_schema_patches_frozen()
+    else:
+        _run_alembic_migrations()
 
 
 def get_session():

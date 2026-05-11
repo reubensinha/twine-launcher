@@ -177,7 +177,6 @@ All prefixed with `TWINE_`:
 
 ## Short Term Roadmap
 
-- [x] User-configurable games directory (native folder picker on first launch; changeable in Settings)
 - [ ] Add "Allow external access" toggle to windows app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
 - [ ] Better settings page
 - [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
@@ -186,6 +185,7 @@ All prefixed with `TWINE_`:
 
 ## Completed
 
+- [x] User-configurable games directory (native folder picker on first launch; changeable in Settings)
 - [x] Make autosave toggleable in user settings
 - [x] Backend API (auth, games, saves, sessions, backup, themes)
 - [x] React frontend (Library, Login, Setup, Settings, Admin pages)

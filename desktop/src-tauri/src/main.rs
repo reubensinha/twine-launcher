@@ -20,6 +20,10 @@ struct SidecarState(Mutex<Option<CommandChild>>);
 /// helper can construct the correct URL after a window has been closed.
 struct AppPort(Mutex<u16>);
 
+/// Set to true when the user explicitly selects Quit from the tray menu.
+/// ExitRequested only prevents exit when this is false (i.e. a window close).
+struct ExplicitQuit(Mutex<bool>);
+
 /// Asks the OS to assign a free port by binding to port 0, reads the assigned
 /// port number, then drops the listener so the sidecar can bind it.
 fn find_free_port() -> u16 {
@@ -105,6 +109,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarState(Mutex::new(None)))
         .manage(AppPort(Mutex::new(0))) // real port written in setup
+        .manage(ExplicitQuit(Mutex::new(false)))
         .setup(|app| {
             // ── Resolve data and games directories ────────────────────────────
             let app_data    = app.path().app_data_dir()?;
@@ -221,7 +226,10 @@ fn main() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app: &tauri::AppHandle, event| match event.id.as_ref() {
                     "show" => open_main_window(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        *app.state::<ExplicitQuit>().0.lock().unwrap() = true;
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
@@ -246,9 +254,11 @@ fn main() {
         .expect("error while building Twine Launcher")
         .run(|app, event| match event {
             tauri::RunEvent::ExitRequested { api, .. } => {
-                // All windows closed — keep the library alive in the tray.
-                // The backend is still running and accessible.
-                api.prevent_exit();
+                // Window close: keep the library alive in the tray.
+                // Explicit Quit from the tray menu: allow the exit through.
+                if !*app.state::<ExplicitQuit>().0.lock().unwrap() {
+                    api.prevent_exit();
+                }
             }
             tauri::RunEvent::Exit => {
                 // Explicit Quit from tray (or OS shutdown) — kill the sidecar.

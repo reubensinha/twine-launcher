@@ -29,8 +29,29 @@ a = Analysis(
         # so FastAPI can find and serve these files.
         # NOTE: backend/static/ui/ must exist before running PyInstaller.
         (str(ROOT / "backend" / "static" / "ui"), "static_ui"),
+        # Bundle Alembic migration scripts so init_db() can run them when frozen.
+        # database.py uses sys._MEIPASS/alembic as the script_location when frozen.
+        (str(ROOT / "alembic"), "alembic"),
     ],
     hiddenimports=[
+        # Alembic — not discovered by static analysis because it's imported lazily
+        "alembic",
+        "alembic.config",
+        "alembic.command",
+        "alembic.context",
+        "alembic.runtime.migration",
+        "alembic.runtime.environment",
+        "alembic.script",
+        "alembic.script.base",
+        "alembic.script.revision",
+        "alembic.operations",
+        "alembic.operations.base",
+        "alembic.operations.ops",
+        "alembic.operations.toimpl",
+        "alembic.ddl",
+        "alembic.ddl.base",
+        "alembic.ddl.impl",
+        "alembic.ddl.sqlite",
         # uvicorn internals not discovered by static analysis
         "uvicorn.logging",
         "uvicorn.loops",

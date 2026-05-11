@@ -133,12 +133,17 @@ class GameSession(Base):
 
 def _run_alembic_migrations() -> None:
     """Apply any pending Alembic schema migrations."""
+    import sys
     from pathlib import Path
     from alembic.config import Config
     from alembic import command
     from sqlalchemy import inspect as sa_inspect
 
-    alembic_dir = Path(__file__).parents[3] / "alembic"
+    if getattr(sys, "frozen", False):
+        # PyInstaller bundles alembic/ into sys._MEIPASS (see backend.spec datas).
+        alembic_dir = Path(getattr(sys, "_MEIPASS", "")) / "alembic"
+    else:
+        alembic_dir = Path(__file__).parents[3] / "alembic"
     cfg = Config()
     cfg.set_main_option("script_location", str(alembic_dir))
     cfg.set_main_option("sqlalchemy.url", get_settings().database_url)

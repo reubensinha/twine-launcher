@@ -74,17 +74,28 @@ def main() -> None:
     from backend.app.main import app  # noqa: PLC0415
 
     _w(f"[2c] imports ok — binding {args.host}:{args.port}")
-    print(f"[2] starting uvicorn on {args.host}:{args.port}", flush=True)
 
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level="info",
-    )
+    # ProactorEventLoop (Windows default) can crash in PyInstaller frozen
+    # executables. Switch to SelectorEventLoop for compatibility.
+    if sys.platform == "win32":
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        _w("[2d] set WindowsSelectorEventLoopPolicy")
 
-    _w("[3] uvicorn stopped")
-    print("[3] uvicorn stopped", flush=True)
+    try:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+        )
+        _w("[3] uvicorn returned normally")
+    except Exception:
+        import traceback as _tb
+        _w("[3] EXCEPTION:\n" + _tb.format_exc())
+        raise
+    finally:
+        _w("[4] process exiting")
 
 
 if __name__ == "__main__":

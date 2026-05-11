@@ -82,6 +82,10 @@ def main() -> None:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         _w("[2d] set WindowsSelectorEventLoopPolicy")
 
+    # Ensure any log messages that miss our sys.stderr handler still land in the file.
+    import logging as _logging
+    _logging.basicConfig(stream=log_file or sys.stderr, level=_logging.DEBUG)
+
     try:
         uvicorn.run(
             app,
@@ -90,9 +94,9 @@ def main() -> None:
             log_level="info",
         )
         _w("[3] uvicorn returned normally")
-    except Exception:
+    except BaseException:
         import traceback as _tb
-        _w("[3] EXCEPTION:\n" + _tb.format_exc())
+        _w("[3] BaseException:\n" + _tb.format_exc())
         raise
     finally:
         _w("[4] process exiting")

@@ -92,10 +92,78 @@ fn get_games_dir(handle: tauri::AppHandle) -> Result<serde_json::Value, String> 
 fn save_games_dir(games_dir: String, handle: tauri::AppHandle) -> Result<(), String> {
     let path = handle.path().app_config_dir()
         .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let mut cfg: serde_json::Value = std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+    cfg["games_dir"] = serde_json::json!(games_dir);
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&path,
-        serde_json::json!({"games_dir": games_dir}).to_string()
-    ).map_err(|e| e.to_string())
+    std::fs::write(&path, cfg.to_string()).map_err(|e| e.to_string())
+}
+
+/// Returns the machine's primary LAN IP by routing a UDP socket toward 8.8.8.8
+/// (no packets are actually sent). Returns None if no suitable interface exists.
+fn get_local_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
+}
+
+#[tauri::command]
+fn get_network_info(handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let port = *handle.state::<AppPort>().0.lock().unwrap();
+    let config_path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let cfg: serde_json::Value = std::fs::read_to_string(&config_path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+    let configured_port = cfg["external_port"].as_u64().map(|p| p as u16).unwrap_or(8080);
+    let local_ip = get_local_ip();
+    Ok(serde_json::json!({
+        "running_port":    port,
+        "configured_port": configured_port,
+        "local_ip":        local_ip,
+    }))
+}
+
+#[tauri::command]
+fn save_external_port(port: u16, handle: tauri::AppHandle) -> Result<(), String> {
+    // Verify the port is free before persisting it — but skip the check when
+    // the user is re-saving the port the sidecar is already bound to, because
+    // that port will appear "in use" by our own process.
+    let running_port = *handle.state::<AppPort>().0.lock().unwrap();
+    if port != running_port {
+        std::net::TcpListener::bind(("0.0.0.0", port))
+            .map_err(|_| format!("Port {} is already in use — choose a different port.", port))?;
+    }
+    let path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let mut cfg: serde_json::Value = std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+    cfg["external_port"] = serde_json::json!(port);
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, cfg.to_string()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_external_access(handle: tauri::AppHandle) -> Result<bool, String> {
+    let config_path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let cfg: Option<serde_json::Value> = std::fs::read_to_string(&config_path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    Ok(cfg.and_then(|c| c["allow_external_access"].as_bool()).unwrap_or(false))
+}
+
+#[tauri::command]
+fn save_external_access(allow: bool, handle: tauri::AppHandle) -> Result<(), String> {
+    let path = handle.path().app_config_dir()
+        .map_err(|e| e.to_string())?.join("sidecar-config.json");
+    let mut cfg: serde_json::Value = std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+    cfg["allow_external_access"] = serde_json::json!(allow);
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, cfg.to_string()).map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -139,8 +207,29 @@ fn main() {
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(&games_dir)?;
 
-            // ── Pick a free port (user never sees this number) ─────────────────
-            let port = find_free_port();
+            // ── Resolve bind host and port from config ─────────────────────────
+            let startup_cfg: serde_json::Value = std::fs::read_to_string(&config_path).ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::json!({}));
+            let allow_external = startup_cfg["allow_external_access"].as_bool().unwrap_or(false);
+            let bind_host = if allow_external { "0.0.0.0" } else { "127.0.0.1" };
+
+            // External access needs a stable port so users can bookmark/share the URL.
+            // Localhost-only mode uses a random free port (user never sees the number).
+            let port: u16 = if allow_external {
+                let desired = startup_cfg["external_port"].as_u64().map(|p| p as u16).unwrap_or(8080);
+                // Verify the port is free before handing it to the sidecar.
+                // Fall back to a random port so the app still starts if something else
+                // already holds the configured port; the Settings page shows running_port
+                // so the user sees the correct URL and can update the setting.
+                if std::net::TcpListener::bind(("0.0.0.0", desired)).is_ok() {
+                    desired
+                } else {
+                    find_free_port()
+                }
+            } else {
+                find_free_port()
+            };
             *app.state::<AppPort>().0.lock().unwrap() = port;
 
             // ── Spawn the Python backend sidecar ───────────────────────────────
@@ -148,6 +237,8 @@ fn main() {
                 .shell()
                 .sidecar("twine-launcher-backend")?
                 .args([
+                    "--host",
+                    bind_host,
                     "--data-dir",
                     data_dir.to_str().unwrap_or_default(),
                     "--games-dir",
@@ -249,7 +340,11 @@ fn main() {
         // No on_window_event needed: closing the window destroys the WebviewWindow
         // (like closing a browser tab). The pagehide event fires in WebView2,
         // which the frontend uses to clean up active game sessions.
-        .invoke_handler(tauri::generate_handler![get_games_dir, save_games_dir])
+        .invoke_handler(tauri::generate_handler![
+            get_games_dir, save_games_dir,
+            get_external_access, save_external_access,
+            get_network_info, save_external_port,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building Twine Launcher")
         .run(|app, event| match event {

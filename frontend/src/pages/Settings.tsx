@@ -19,6 +19,11 @@ export function SettingsPage() {
   const [autostart, setAutostart]           = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(false);
   const [autosaveSaving, setAutosaveSaving] = useState(false);
+  const [externalAccess, setExternalAccess] = useState(false);
+  const [externalAccessLoading, setExternalAccessLoading] = useState(false);
+  const [networkInfo, setNetworkInfo] = useState<{ running_port: number; configured_port: number; local_ip: string | null } | null>(null);
+  const [editPort, setEditPort] = useState('8080');
+  const [portSaving, setPortSaving] = useState(false);
   const [gamesDirCfg,  setGamesDirCfg]  = useState<{ games_dir: string; default_games_dir?: string } | null>(null);
   const [editGamesDir, setEditGamesDir] = useState('');
   const [dirSaving,    setDirSaving]    = useState(false);
@@ -30,6 +35,15 @@ export function SettingsPage() {
     import('@tauri-apps/plugin-autostart').then(({ isEnabled }) =>
       isEnabled().then(setAutostart)
     );
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<boolean>('get_external_access').then(setExternalAccess);
+      invoke<{ running_port: number; configured_port: number; local_ip: string | null }>('get_network_info')
+        .then(info => { setNetworkInfo(info); setEditPort(String(info.configured_port)); });
+    });
   }, []);
 
   useEffect(() => {
@@ -115,6 +129,35 @@ export function SettingsPage() {
       setUserSaving(null);
       if (userFileRef.current) userFileRef.current.value = '';
     }
+  };
+
+  const savePort = async () => {
+    const p = parseInt(editPort, 10);
+    if (isNaN(p) || p < 1024 || p > 65535) {
+      setToast({ msg: 'Port must be a number between 1024 and 65535.', type: 'error' });
+      return;
+    }
+    setPortSaving(true);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_external_port', { port: p });
+      setToast({ msg: 'Port saved — quit and relaunch to apply.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to save port.', type: 'error' });
+    } finally { setPortSaving(false); }
+  };
+
+  const toggleExternalAccess = async () => {
+    setExternalAccessLoading(true);
+    const next = !externalAccess;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_external_access', { allow: next });
+      setExternalAccess(next);
+      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update setting.', type: 'error' });
+    } finally { setExternalAccessLoading(false); }
   };
 
   const toggleAutostart = async () => {
@@ -235,6 +278,59 @@ export function SettingsPage() {
               {gamesDirCfg.games_dir}
             </code>
           )}
+        </Section>
+      )}
+
+      {/* ── External access (desktop only) ───────────────────────────────── */}
+      {isTauri && (
+        <Section
+          title="Allow external access"
+          description="When enabled, the backend accepts connections from other devices on your local network. Disabled by default — only enable on trusted networks. Changes take effect after quitting and relaunching."
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <Button size="sm" loading={externalAccessLoading} onClick={toggleExternalAccess}>
+                {externalAccess ? '✓ External access on' : 'External access off'}
+              </Button>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {externalAccess
+                  ? 'Other devices on your network can connect'
+                  : 'Only accessible from this computer'}
+              </span>
+            </div>
+            {externalAccess && networkInfo && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {networkInfo.local_ip && (
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Connect from:{' '}
+                    <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text)' }}>
+                      http://{networkInfo.local_ip}:{networkInfo.running_port}
+                    </code>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Port:</span>
+                  <input
+                    value={editPort}
+                    onChange={e => setEditPort(e.target.value)}
+                    style={{
+                      width: '5.5rem',
+                      background: 'var(--surface2)', color: 'var(--text)',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                      padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem',
+                    }}
+                  />
+                  <Button size="sm" loading={portSaving} onClick={savePort}>Save</Button>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Takes effect on next launch</span>
+                </div>
+                {networkInfo.running_port !== networkInfo.configured_port && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Port {networkInfo.configured_port} was in use at startup — running on {networkInfo.running_port} this session. Update the port to a free one and relaunch.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </Section>
       )}
 

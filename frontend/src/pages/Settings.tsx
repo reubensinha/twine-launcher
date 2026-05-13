@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { configApi, themeApi } from '../api';
+import { auth, backup, configApi, themeApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
-import { Button, Toast } from '../components/ui';
+import { Button, Input, Modal, Toggle, Toast } from '../components/ui';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -16,17 +16,22 @@ export function SettingsPage() {
   const userFileRef   = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
 
-  const [autostart, setAutostart]           = useState(false);
-  const [autostartLoading, setAutostartLoading] = useState(false);
-  const [autosaveSaving, setAutosaveSaving] = useState(false);
-  const [externalAccess, setExternalAccess] = useState(false);
-  const [externalAccessLoading, setExternalAccessLoading] = useState(false);
-  const [networkInfo, setNetworkInfo] = useState<{ running_port: number; configured_port: number; local_ip: string | null } | null>(null);
-  const [editPort, setEditPort] = useState('8080');
-  const [portSaving, setPortSaving] = useState(false);
-  const [gamesDirCfg,  setGamesDirCfg]  = useState<{ games_dir: string; default_games_dir?: string } | null>(null);
-  const [editGamesDir, setEditGamesDir] = useState('');
-  const [dirSaving,    setDirSaving]    = useState(false);
+  const [autostart, setAutostart]                             = useState(false);
+  const [autostartLoading, setAutostartLoading]               = useState(false);
+  const [autosaveSaving, setAutosaveSaving]                   = useState(false);
+  const [externalAccess, setExternalAccess]                   = useState(false);
+  const [externalAccessLoading, setExternalAccessLoading]     = useState(false);
+  const [networkInfo, setNetworkInfo]                         = useState<{ running_port: number; configured_port: number; local_ip: string | null } | null>(null);
+  const [editPort, setEditPort]                               = useState('8080');
+  const [portSaving, setPortSaving]                           = useState(false);
+  const [gamesDirCfg, setGamesDirCfg]                         = useState<{ games_dir: string; default_games_dir?: string } | null>(null);
+  const [editGamesDir, setEditGamesDir]                       = useState('');
+  const [dirSaving, setDirSaving]                             = useState(false);
+  const [pwCurrent, setPwCurrent]                             = useState('');
+  const [pwNew, setPwNew]                                     = useState('');
+  const [pwSaving, setPwSaving]                               = useState(false);
+  const [themeHelpOpen, setThemeHelpOpen]                     = useState(false);
+  const [exporting, setExporting]                             = useState<'saves-only' | null>(null);
 
   useEffect(() => { fetchBuiltins(); }, [fetchBuiltins]);
 
@@ -57,7 +62,96 @@ export function SettingsPage() {
     }
   }, []);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const changePassword = async () => {
+    if (pwNew.length < 8) { setToast({ msg: 'New password must be at least 8 characters.', type: 'error' }); return; }
+    setPwSaving(true);
+    try {
+      await auth.changePassword(pwCurrent, pwNew);
+      setPwCurrent(''); setPwNew('');
+      setToast({ msg: 'Password changed.', type: 'success' });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : 'Failed to change password.', type: 'error' });
+    } finally { setPwSaving(false); }
+  };
+
+  const toggleAutostart = async () => {
+    setAutostartLoading(true);
+    try {
+      const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
+      if (autostart) await disable(); else await enable();
+      setAutostart(await isEnabled());
+      setToast({ msg: autostart ? 'Removed from startup.' : 'Will launch on startup.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update startup setting.', type: 'error' });
+    } finally { setAutostartLoading(false); }
+  };
+
+  const toggleExternalAccess = async () => {
+    setExternalAccessLoading(true);
+    const next = !externalAccess;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_external_access', { allow: next });
+      setExternalAccess(next);
+      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update setting.', type: 'error' });
+    } finally { setExternalAccessLoading(false); }
+  };
+
+  const savePort = async () => {
+    const p = parseInt(editPort, 10);
+    if (isNaN(p) || p < 1024 || p > 65535) {
+      setToast({ msg: 'Port must be a number between 1024 and 65535.', type: 'error' });
+      return;
+    }
+    setPortSaving(true);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_external_port', { port: p });
+      setToast({ msg: 'Port saved — quit and relaunch to apply.', type: 'success' });
+    } catch (err: unknown) {
+      setToast({ msg: err instanceof Error ? err.message : String(err), type: 'error' });
+    } finally { setPortSaving(false); }
+  };
+
+  const browseGamesDir = async () => {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const dir = await open({ directory: true, defaultPath: editGamesDir });
+    if (typeof dir === 'string') setEditGamesDir(dir);
+  };
+
+  const saveGamesDir = async () => {
+    setDirSaving(true);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_games_dir', { gamesDir: editGamesDir });
+      setGamesDirCfg(c => c ? { ...c, games_dir: editGamesDir } : c);
+      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : 'Failed to save', type: 'error' });
+    } finally { setDirSaving(false); }
+  };
+
+  const toggleAutosave = async () => {
+    setAutosaveSaving(true);
+    const next = !(user?.autosave_enabled ?? true);
+    try {
+      await updatePrefs({ autosave_enabled: next });
+      setToast({ msg: next ? 'Autosave enabled.' : 'Autosave disabled.', type: 'success' });
+    } catch {
+      setToast({ msg: 'Failed to update autosave setting.', type: 'error' });
+    } finally { setAutosaveSaving(false); }
+  };
+
+  const downloadSavesBackup = async () => {
+    setExporting('saves-only');
+    try { await backup.export('saves-only'); }
+    catch { setToast({ msg: 'Export failed.', type: 'error' }); }
+    finally { setExporting(null); }
+  };
 
   const setGlobalBuiltin = async (id: string) => {
     setGlobalSaving(id);
@@ -131,69 +225,7 @@ export function SettingsPage() {
     }
   };
 
-  const savePort = async () => {
-    const p = parseInt(editPort, 10);
-    if (isNaN(p) || p < 1024 || p > 65535) {
-      setToast({ msg: 'Port must be a number between 1024 and 65535.', type: 'error' });
-      return;
-    }
-    setPortSaving(true);
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('save_external_port', { port: p });
-      setToast({ msg: 'Port saved — quit and relaunch to apply.', type: 'success' });
-    } catch {
-      setToast({ msg: 'Failed to save port.', type: 'error' });
-    } finally { setPortSaving(false); }
-  };
-
-  const toggleExternalAccess = async () => {
-    setExternalAccessLoading(true);
-    const next = !externalAccess;
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('save_external_access', { allow: next });
-      setExternalAccess(next);
-      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
-    } catch {
-      setToast({ msg: 'Failed to update setting.', type: 'error' });
-    } finally { setExternalAccessLoading(false); }
-  };
-
-  const toggleAutostart = async () => {
-    setAutostartLoading(true);
-    try {
-      const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
-      if (autostart) await disable(); else await enable();
-      setAutostart(await isEnabled());
-      setToast({ msg: autostart ? 'Removed from startup.' : 'Will launch on startup.', type: 'success' });
-    } catch {
-      setToast({ msg: 'Failed to update startup setting.', type: 'error' });
-    } finally { setAutostartLoading(false); }
-  };
-
-  const toggleAutosave = async () => {
-    setAutosaveSaving(true);
-    const next = !(user?.autosave_enabled ?? true);
-    try {
-      await updatePrefs({ autosave_enabled: next });
-      setToast({ msg: next ? 'Autosave enabled.' : 'Autosave disabled.', type: 'success' });
-    } catch {
-      setToast({ msg: 'Failed to update autosave setting.', type: 'error' });
-    } finally { setAutosaveSaving(false); }
-  };
-
-  const saveGamesDir = async () => {
-    setDirSaving(true);
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('save_games_dir', { gamesDir: editGamesDir });
-      setGamesDirCfg(c => c ? { ...c, games_dir: editGamesDir } : c);
-      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
-    } catch (err) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed to save', type: 'error' });
-    } finally { setDirSaving(false); }
-  };
+  // ── Layout helpers ─────────────────────────────────────────────────────────
 
   const Section = ({ title, description, children }: { title: string; description: string; children: React.ReactNode }) => (
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
@@ -203,9 +235,34 @@ export function SettingsPage() {
     </div>
   );
 
+  const CategoryHeader = ({ label }: { label: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '2.5rem 0 1.5rem' }}>
+      <span style={{
+        fontFamily: 'var(--font-ui)', fontSize: '0.65rem', fontWeight: 600,
+        letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)',
+        whiteSpace: 'nowrap',
+      }}>{label}</span>
+      <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+    </div>
+  );
+
+  const ToggleRow = ({ label, description, checked, onChange, disabled }: {
+    label: string; description?: string; checked: boolean; onChange: () => void; disabled?: boolean;
+  }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <Toggle checked={checked} onChange={() => onChange()} disabled={disabled} />
+      <div>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text)' }}>{label}</span>
+        {description && (
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{description}</span>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ padding: '2.5rem', maxWidth: 800, margin: '0 auto' }}>
-      <div style={{ marginBottom: '2.5rem' }}>
+      <div style={{ marginBottom: '2rem' }}>
         <h2 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.7rem', fontWeight: 400 }}>Settings</h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.2rem' }}>
           Signed in as <span style={{ color: 'var(--text)' }}>{user?.username}</span>
@@ -213,93 +270,66 @@ export function SettingsPage() {
         </p>
       </div>
 
-      {/* ── App Startup (desktop only) ───────────────────────────────────── */}
-      {isTauri && (
-        <Section
-          title="App startup"
-          description="Start Twine Launcher automatically when you log in to Windows. The library will be ready in the tray without needing to launch it manually."
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Button size="sm" loading={autostartLoading} onClick={toggleAutostart}>
-              {autostart ? '✓ Launch on startup' : 'Launch on startup'}
-            </Button>
-            {autostart && (
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Enabled — will start with Windows
-              </span>
-            )}
-          </div>
-        </Section>
-      )}
+      {/* ── ACCOUNT ──────────────────────────────────────────────────────────── */}
+      <CategoryHeader label="Account" />
 
-      {/* ── Autosave ──────────────────────────────────────────────────────── */}
-      <Section
-        title="Autosave"
-        description="When enabled, your progress is automatically saved to the server every 3 seconds while you play. When disabled, use the ↑ Save button in the game view to save manually."
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <Button size="sm" loading={autosaveSaving} onClick={toggleAutosave}>
-            {(user?.autosave_enabled ?? true) ? '✓ Autosave on' : 'Autosave off'}
-          </Button>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            {(user?.autosave_enabled ?? true)
-              ? 'Saves automatically every 3 seconds'
-              : 'Manual save only — use ↑ Save in the game view'}
-          </span>
+      <Section title="Change password" description="Update your account password. Requires your current password.">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 360 }}>
+          <Input
+            type="password"
+            label="Current password"
+            placeholder="Current password"
+            value={pwCurrent}
+            onChange={e => setPwCurrent(e.target.value)}
+            autoComplete="current-password"
+          />
+          <Input
+            type="password"
+            label="New password"
+            placeholder="New password (8+ characters)"
+            value={pwNew}
+            onChange={e => setPwNew(e.target.value)}
+            autoComplete="new-password"
+          />
+          <div>
+            <Button size="sm" loading={pwSaving} onClick={changePassword}>Change password</Button>
+          </div>
         </div>
       </Section>
 
-      {/* ── Games directory ───────────────────────────────────────────── */}
-      {gamesDirCfg && (
+      {/* ── APP ──────────────────────────────────────────────────────────────── */}
+      {isTauri && <CategoryHeader label="App" />}
+
+      {isTauri && (
         <Section
-          title="Games directory"
-          description={isTauri
-            ? "Where Twine Launcher looks for your HTML game files. Changes take effect after quitting and relaunching."
-            : "The folder containing Twine HTML game files (set via TWINE_GAMES_DIR in docker-compose.yml)."}
+          title="Launch on startup"
+          description="Start Twine Launcher automatically when you log in to Windows. The library will be ready in the tray without needing to launch it manually."
         >
-          {isTauri ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <input
-                value={editGamesDir}
-                onChange={e => setEditGamesDir(e.target.value)}
-                style={{
-                  width: '100%', boxSizing: 'border-box',
-                  background: 'var(--surface2)', color: 'var(--text)',
-                  border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                  padding: '0.45rem 0.65rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem',
-                }}
-              />
-              <div style={{ display: 'flex', gap: '0.6rem' }}>
-                <Button size="sm" loading={dirSaving} onClick={saveGamesDir}>Save</Button>
-              </div>
-            </div>
-          ) : (
-            <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {gamesDirCfg.games_dir}
-            </code>
-          )}
+          <ToggleRow
+            label="Launch on startup"
+            description={autostart ? 'Starts automatically with Windows' : undefined}
+            checked={autostart}
+            onChange={toggleAutostart}
+            disabled={autostartLoading}
+          />
         </Section>
       )}
 
-      {/* ── External access (desktop only) ───────────────────────────────── */}
-      {isTauri && (
+      {isTauri && isAdmin && (
         <Section
           title="Allow external access"
           description="When enabled, the backend accepts connections from other devices on your local network. Disabled by default — only enable on trusted networks. Changes take effect after quitting and relaunching."
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Button size="sm" loading={externalAccessLoading} onClick={toggleExternalAccess}>
-                {externalAccess ? '✓ External access on' : 'External access off'}
-              </Button>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                {externalAccess
-                  ? 'Other devices on your network can connect'
-                  : 'Only accessible from this computer'}
-              </span>
-            </div>
+            <ToggleRow
+              label="External access"
+              description={externalAccess ? 'Other devices on your network can connect' : 'Only accessible from this computer'}
+              checked={externalAccess}
+              onChange={toggleExternalAccess}
+              disabled={externalAccessLoading}
+            />
             {externalAccess && networkInfo && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingLeft: '3.15rem' }}>
                 {networkInfo.local_ip && (
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                     Connect from:{' '}
@@ -314,8 +344,7 @@ export function SettingsPage() {
                     value={editPort}
                     onChange={e => setEditPort(e.target.value)}
                     style={{
-                      width: '5.5rem',
-                      background: 'var(--surface2)', color: 'var(--text)',
+                      width: '5.5rem', background: 'var(--surface2)', color: 'var(--text)',
                       border: '1px solid var(--border)', borderRadius: 'var(--radius)',
                       padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem',
                     }}
@@ -334,11 +363,81 @@ export function SettingsPage() {
         </Section>
       )}
 
-      {/* ── My Theme ──────────────────────────────────────────────────────── */}
+      {isTauri && isAdmin && gamesDirCfg && (
+        <Section
+          title="Games directory"
+          description="Where Twine Launcher looks for your HTML game files. Changes take effect after quitting and relaunching."
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                value={editGamesDir}
+                onChange={e => setEditGamesDir(e.target.value)}
+                style={{
+                  flex: 1, boxSizing: 'border-box',
+                  background: 'var(--surface2)', color: 'var(--text)',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                  padding: '0.45rem 0.65rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem',
+                }}
+              />
+              <Button size="sm" variant="ghost" onClick={browseGamesDir}>Browse…</Button>
+            </div>
+            <div>
+              <Button size="sm" loading={dirSaving} onClick={saveGamesDir}>Save</Button>
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {!isTauri && isAdmin && gamesDirCfg && (
+        <Section
+          title="Games directory"
+          description="The folder containing Twine HTML game files (set via TWINE_GAMES_DIR in docker-compose.yml)."
+        >
+          <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {gamesDirCfg.games_dir}
+          </code>
+        </Section>
+      )}
+
+      {/* ── GAMEPLAY ─────────────────────────────────────────────────────────── */}
+      <CategoryHeader label="Gameplay" />
+
       <Section
-        title="My theme"
-        description="Your personal theme overrides the global default. Only you see it."
+        title="Autosave"
+        description="When enabled, your progress is automatically saved to the server every 3 seconds while you play. When disabled, use the ↑ Save button in the game view to save manually."
       >
+        <ToggleRow
+          label="Autosave"
+          description={(user?.autosave_enabled ?? true)
+            ? 'Saves automatically every 3 seconds'
+            : 'Manual save only — use ↑ Save in the game view'}
+          checked={user?.autosave_enabled ?? true}
+          onChange={toggleAutosave}
+          disabled={autosaveSaving}
+        />
+      </Section>
+
+      {/* ── BACKUP ───────────────────────────────────────────────────────────── */}
+      <CategoryHeader label="Backup" />
+
+      <Section title="My saves" description="Export your save data as a portable zip file. You can restore it later via a full import.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <Button size="sm" loading={exporting === 'saves-only'} onClick={downloadSavesBackup}>
+            ↓ Download saves backup
+          </Button>
+          {isAdmin && (
+            <a href="/admin/backup" style={{ fontSize: '0.82rem', color: 'var(--accent)', textDecoration: 'none' }}>
+              Full backup &amp; restore →
+            </a>
+          )}
+        </div>
+      </Section>
+
+      {/* ── APPEARANCE ───────────────────────────────────────────────────────── */}
+      <CategoryHeader label="Appearance" />
+
+      <Section title="My theme" description="Your personal theme overrides the global default. Only you see it.">
         <ThemePicker
           builtins={builtins}
           saving={userSaving}
@@ -353,12 +452,8 @@ export function SettingsPage() {
         />
       </Section>
 
-      {/* ── Global Theme (admin only) ─────────────────────────────────────── */}
       {isAdmin && (
-        <Section
-          title="Global default theme"
-          description="Sets the default for all users who haven't chosen their own. Applies to new users immediately."
-        >
+        <Section title="Global default theme" description="Sets the default for all users who haven't chosen their own. Applies to new users immediately.">
           <ThemePicker
             builtins={builtins}
             saving={globalSaving}
@@ -374,8 +469,11 @@ export function SettingsPage() {
         </Section>
       )}
 
-      {/* ── Custom theme format ────────────────────────────────────────────── */}
-      <Section title="Custom theme format" description="Upload a .json file to apply a custom colour scheme.">
+      <Button size="sm" variant="ghost" style={{ marginBottom: '2rem' }} onClick={() => setThemeHelpOpen(true)}>
+        ? Custom theme format
+      </Button>
+
+      <Modal open={themeHelpOpen} onClose={() => setThemeHelpOpen(false)} title="Custom theme format" width={520}>
         <pre style={{
           fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)',
           lineHeight: 1.9, background: 'var(--surface)', padding: '1rem 1.25rem',
@@ -394,7 +492,7 @@ export function SettingsPage() {
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem', lineHeight: 1.6 }}>
           All colour values must be 3 or 6-digit CSS hex colours (e.g. <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>#1a2b3c</code>). The <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>name</code> field is optional.
         </p>
-      </Section>
+      </Modal>
 
       {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
@@ -421,7 +519,6 @@ function ThemePicker({ builtins, saving, onSelectBuiltin, onUploadCustom, onRese
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Built-in swatches */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
         {builtins.map(theme => (
           <ThemeSwatch
@@ -434,7 +531,6 @@ function ThemePicker({ builtins, saving, onSelectBuiltin, onUploadCustom, onRese
         ))}
       </div>
 
-      {/* Actions row */}
       <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
         <input ref={fileRef} type="file" accept=".json" onChange={onFileChange} style={{ display: 'none' }} />
         <Button size="sm" loading={saving === 'custom'} onClick={onUploadCustom}>
@@ -469,7 +565,6 @@ function ThemeSwatch({ theme, active, loading, onClick }: { theme: BuiltinTheme;
         display: 'flex', flexDirection: 'column', gap: '0.3rem',
       }}
     >
-      {/* Mini colour bar */}
       <div style={{ display: 'flex', gap: 3, marginBottom: '0.25rem' }}>
         {[theme.bg, theme.surface, theme.text, theme.accent].map((c, i) => (
           <div key={i} style={{ width: 12, height: 12, borderRadius: '50%', background: c, border: `1px solid ${theme.border}` }} />

@@ -84,6 +84,11 @@ export const auth = {
   me: () => request<User>('/auth/me'),
   updateMe: (prefs: { autosave_enabled: boolean }) =>
     request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(prefs) }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ detail: string }>('/auth/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };
 

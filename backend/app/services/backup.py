@@ -36,13 +36,14 @@ def _safe_name(name: str) -> str:
     return "".join(c if c.isalnum() or c in " _-" else "_" for c in name).strip()
 
 
-def export_backup(db: Session, scope: str) -> bytes:
+def export_backup(db: Session, scope: str, user_id: int | None = None) -> bytes:
     """
     Build a backup zip in memory and return its bytes.
 
     Args:
         db: Active SQLAlchemy session.
         scope: "full" or "saves-only".
+        user_id: If set, only export saves belonging to this user (player self-export).
 
     Returns:
         Raw zip file bytes suitable for streaming to the client.
@@ -59,7 +60,10 @@ def export_backup(db: Session, scope: str) -> bytes:
         zf.writestr("twine-launcher-backup/manifest.json", json.dumps(manifest, indent=2))
 
         # ── Saves ──────────────────────────────────────────────────────────────
-        saves = db.query(Save).all()
+        saves_query = db.query(Save)
+        if user_id is not None:
+            saves_query = saves_query.filter(Save.user_id == user_id)
+        saves = saves_query.all()
         for save in saves:
             user = db.get(User, save.user_id)
             game = db.get(Game, save.game_id)

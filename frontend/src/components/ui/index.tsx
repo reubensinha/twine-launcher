@@ -122,6 +122,35 @@ export function Modal({ open, onClose, title, children, width = 500 }: ModalProp
   );
 }
 
+// ── Toggle ────────────────────────────────────────────────────────────────────
+interface ToggleProps { checked: boolean; onChange: (val: boolean) => void; disabled?: boolean; }
+export function Toggle({ checked, onChange, disabled }: ToggleProps) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      style={{
+        width: '2.4rem', height: '1.3rem', borderRadius: '999px',
+        border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+        background: checked ? 'var(--accent)' : 'var(--border)',
+        position: 'relative', transition: 'background 200ms ease',
+        flexShrink: 0, opacity: disabled ? 0.45 : 1, padding: 0,
+      }}
+    >
+      <span style={{
+        display: 'block', width: '1rem', height: '1rem', borderRadius: '50%',
+        background: 'var(--accent-text)',
+        position: 'absolute', top: '0.15rem',
+        left: checked ? 'calc(100% - 1.15rem)' : '0.15rem',
+        transition: 'left 200ms ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+      }} />
+    </button>
+  );
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 interface ToastProps { message: string; type?: 'info' | 'error' | 'success'; onDismiss: () => void; }
 export function Toast({ message, type = 'info', onDismiss }: ToastProps) {

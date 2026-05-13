@@ -175,6 +175,7 @@ fn main() {
             open_main_window(app);
         }))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState(Mutex::new(None)))
         .manage(AppPort(Mutex::new(0))) // real port written in setup
         .manage(ExplicitQuit(Mutex::new(false)))

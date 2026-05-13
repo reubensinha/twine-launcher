@@ -118,9 +118,13 @@ export function SettingsPage() {
   };
 
   const browseGamesDir = async () => {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const dir = await open({ directory: true, defaultPath: editGamesDir });
-    if (typeof dir === 'string') setEditGamesDir(dir);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const dir = await open({ directory: true, defaultPath: editGamesDir || undefined });
+      if (typeof dir === 'string') setEditGamesDir(dir);
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : 'Could not open folder picker.', type: 'error' });
+    }
   };
 
   const saveGamesDir = async () => {

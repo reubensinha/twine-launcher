@@ -177,8 +177,13 @@ All prefixed with `TWINE_`:
 
 ## Short Term Roadmap
 
-- [ ] Add "Allow external access" toggle to windows app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
-- [ ] Better settings page
+- [x] Add "Allow external access" toggle to windows app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
+- [x] Better settings page
+- [ ] Password reset options
+  - [ ] Check if these password reset/forget password options are a good idea, or if there are better options available
+  - [ ] Players can click "forget password" on login page
+  - [ ] Admins can reset passwords for other admins and users, temp password generated shown to the admin once (plus easy copy to clipboard button), upon login User is immediately brought to a password change screen before they can continue.
+  - [ ] If admin also forget their password, some way to force change password screen to appear when logging in? Modify some config/xml/yaml file on server machine? Assume only admins have access to the server computer? Check for better ideas
 - [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
 - [ ] Prepare to upload on Winget
 - [ ] Figure out how to deal with providing software updates.

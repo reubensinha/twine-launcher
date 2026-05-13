@@ -123,7 +123,8 @@ export function SettingsPage() {
       const dir = await open({ directory: true, defaultPath: editGamesDir || undefined });
       if (typeof dir === 'string') setEditGamesDir(dir);
     } catch (err) {
-      setToast({ msg: err instanceof Error ? err.message : 'Could not open folder picker.', type: 'error' });
+      const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+      setToast({ msg: msg || 'Could not open folder picker.', type: 'error' });
     }
   };
 

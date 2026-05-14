@@ -193,6 +193,8 @@ export const configApi = {
     request<{ current: string; parent: string | null; dirs: { name: string; path: string }[] }>(
       `/config/browse?path=${encodeURIComponent(path)}`
     ),
+  logs: (lines = 200) =>
+    request<{ path: string; size_bytes: number; lines: string[] }>(`/config/logs?lines=${lines}`),
 };
 
 export const themeApi = {

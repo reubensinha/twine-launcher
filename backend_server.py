@@ -48,8 +48,20 @@ def main() -> None:
         # Uvicorn's log formatter calls .isatty() on the stream and crashes.
         # Write to a log file so startup errors are visible for diagnostics.
         log_path = os.path.join(args.data_dir, "backend.log") if args.data_dir else os.devnull
-        log_file = open(log_path, "w", buffering=1, encoding="utf-8", errors="replace")
-        log_file.write(f"[1] frozen startup — port={args.port} data_dir={args.data_dir}\n")
+
+        # Rotate if the log file exceeds 5 MB before opening (best-effort).
+        _log_size_limit = 5 * 1024 * 1024
+        if log_path != os.devnull and os.path.exists(log_path):
+            try:
+                if os.path.getsize(log_path) > _log_size_limit:
+                    os.replace(log_path, log_path + ".1")
+            except OSError:
+                pass
+
+        log_file = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+        log_file.write("\n" + "=" * 60 + "\n")
+        log_file.write(f"Twine Launcher starting — port={args.port} data_dir={args.data_dir}\n")
+        log_file.write("=" * 60 + "\n")
         log_file.flush()
         if sys.stdout is None:
             sys.stdout = log_file

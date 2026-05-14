@@ -13,6 +13,7 @@ import { ForceChangePasswordPage } from './pages/ForceChangePassword';
 import { AdminDashboard } from './pages/admin/Dashboard';
 import { UsersPage }      from './pages/admin/Users';
 import { BackupPage }     from './pages/admin/Backup';
+import { LogsPage }       from './pages/admin/Logs';
 import { Spinner }        from './components/ui';
 
 function RequireAuth({ children, adminOnly = false }: { children: JSX.Element; adminOnly?: boolean }) {
@@ -83,6 +84,7 @@ function AppRouter() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin"        element={<RequireAuth adminOnly><AdminDashboard /></RequireAuth>} />
         <Route path="/admin/users"  element={<RequireAuth adminOnly><UsersPage /></RequireAuth>} />
+        <Route path="/admin/logs"   element={<RequireAuth adminOnly><LogsPage /></RequireAuth>} />
         <Route path="/backup"       element={<RequireAuth><BackupPage /></RequireAuth>} />
         <Route path="/admin/backup" element={<Navigate to="/backup" replace />} />
       </Route>

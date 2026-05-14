@@ -27,6 +27,38 @@ logging.basicConfig(
 settings = get_settings()
 
 
+def _setup_file_logging(log_level: int) -> None:
+    """Attach a RotatingFileHandler to the root logger for Docker/dev deployments.
+
+    Skipped in frozen (PyInstaller) mode — backend_server.py owns the log file there.
+    """
+    import sys
+    if getattr(sys, "frozen", False):
+        return
+
+    from logging.handlers import RotatingFileHandler
+    from backend.app.core.utils import get_data_dir
+
+    data_dir = get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    log_path = data_dir / "backend.log"
+
+    handler = RotatingFileHandler(
+        str(log_path),
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    handler.setLevel(log_level)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    logging.getLogger().addHandler(handler)
+    logging.getLogger("twine").info("=" * 60)
+    logging.getLogger("twine").info("Twine Launcher server starting")
+
+
 def _check_recovery_file() -> None:
     """Reset the first admin's password if a recovery.txt exists in the data directory.
 
@@ -38,11 +70,8 @@ def _check_recovery_file() -> None:
     import secrets as _secrets
     import string
 
-    db_url = settings.database_url
-    if db_url.startswith("sqlite:///"):
-        data_dir = Path(db_url[len("sqlite:///"):]).parent
-    else:
-        data_dir = Path("/data")
+    from backend.app.core.utils import get_data_dir
+    data_dir = get_data_dir()
 
     recovery_path = data_dir / "recovery.txt"
     if not recovery_path.exists():
@@ -79,6 +108,7 @@ async def lifespan(app: FastAPI):
     On restart all in-memory sessions are gone, so we clean up orphaned
     DB session rows to prevent permanent "game is running" states.
     """
+    _setup_file_logging(_log_level)
     init_db()
     _check_recovery_file()
 

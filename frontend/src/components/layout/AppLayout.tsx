@@ -35,6 +35,7 @@ export function AppLayout() {
             <>
               <NavLink to="/admin"       style={({ isActive }) => linkStyle(isActive)}>Sessions</NavLink>
               <NavLink to="/admin/users" style={({ isActive }) => linkStyle(isActive)}>Users</NavLink>
+              <NavLink to="/admin/logs"  style={({ isActive }) => linkStyle(isActive)}>Logs</NavLink>
             </>
           )}
         </nav>

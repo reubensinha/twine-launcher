@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { auth, backup, configApi, themeApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
@@ -14,7 +14,6 @@ export function SettingsPage() {
   const [toast, setToast]               = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
   const globalFileRef  = useRef<HTMLInputElement>(null);
   const userFileRef    = useRef<HTMLInputElement>(null);
-  const gamesDirRef    = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
 
   const [autostart, setAutostart]                             = useState(false);
@@ -118,15 +117,9 @@ export function SettingsPage() {
     } finally { setPortSaving(false); }
   };
 
-  const browseGamesDir = () => gamesDirRef.current?.click();
+  const [dirPickerOpen, setDirPickerOpen] = useState(false);
 
-  const handleGamesDirPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const path = (file as File & { path?: string }).path;
-    if (path) setEditGamesDir(path.replace(/[/\\][^/\\]+$/, ''));
-    e.target.value = '';
-  };
+  const browseGamesDir = () => setDirPickerOpen(true);
 
   const saveGamesDir = async () => {
     setDirSaving(true);
@@ -374,8 +367,6 @@ export function SettingsPage() {
           description="Where Twine Launcher looks for your HTML game files. Changes take effect after quitting and relaunching."
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <input ref={gamesDirRef} type="file" onChange={handleGamesDirPick} style={{ display: 'none' }}
-              {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>} />
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 value={editGamesDir}
@@ -395,6 +386,13 @@ export function SettingsPage() {
           </div>
         </Section>
       )}
+
+      <DirectoryPicker
+        open={dirPickerOpen}
+        initialPath={editGamesDir}
+        onSelect={(p: string) => { setEditGamesDir(p); setDirPickerOpen(false); }}
+        onClose={() => setDirPickerOpen(false)}
+      />
 
       {!isTauri && isAdmin && gamesDirCfg && (
         <Section
@@ -550,6 +548,95 @@ function ThemePicker({ builtins, saving, onSelectBuiltin, onUploadCustom, onRese
         )}
       </div>
     </div>
+  );
+}
+
+// ── Directory Picker modal ─────────────────────────────────────────────────────
+
+interface DirEntry { name: string; path: string; }
+interface DirectoryPickerProps { open: boolean; initialPath: string; onSelect: (path: string) => void; onClose: () => void; }
+
+function DirectoryPicker({ open, initialPath, onSelect, onClose }: DirectoryPickerProps) {
+  const [current, setCurrent] = useState('');
+  const [dirs, setDirs]       = useState<DirEntry[]>([]);
+  const [parent, setParent]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  const navigate = useCallback(async (path: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await configApi.browse(path);
+      setCurrent(res.current);
+      setDirs(res.dirs);
+      setParent(res.parent);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load directory');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { if (open) navigate(initialPath); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Modal open={open} onClose={onClose} title="Select folder" width={520}>
+      {/* Path bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <button
+          onClick={() => parent && navigate(parent)}
+          disabled={!parent || loading}
+          style={{
+            background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+            color: parent ? 'var(--text)' : 'var(--text-muted)', cursor: parent ? 'pointer' : 'not-allowed',
+            padding: '0.3rem 0.6rem', fontFamily: 'var(--font-ui)', fontSize: '0.8rem', flexShrink: 0,
+          }}
+        >↑ Up</button>
+        <code style={{
+          flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)',
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          padding: '0.3rem 0.6rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{current || '…'}</code>
+      </div>
+
+      {/* Directory list */}
+      <div style={{
+        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+        minHeight: 200, maxHeight: 320, overflowY: 'auto', background: 'var(--surface)',
+      }}>
+        {loading && (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>Loading…</div>
+        )}
+        {error && (
+          <div style={{ padding: '1rem', color: '#c06060', fontSize: '0.82rem' }}>{error}</div>
+        )}
+        {!loading && !error && dirs.length === 0 && (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>No subfolders</div>
+        )}
+        {!loading && dirs.map(d => (
+          <button key={d.path} onClick={() => navigate(d.path)} style={{
+            display: 'block', width: '100%', textAlign: 'left',
+            background: 'none', border: 'none', borderBottom: '1px solid var(--border)',
+            padding: '0.55rem 0.85rem', cursor: 'pointer', color: 'var(--text)',
+            fontFamily: 'var(--font-ui)', fontSize: '0.82rem',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+          >
+            📁 {d.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '1rem' }}>
+        <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button size="sm" variant="primary" onClick={() => onSelect(current)} disabled={!current}>
+          Select this folder
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

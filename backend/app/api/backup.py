@@ -36,9 +36,9 @@ def export(payload: BackupExportRequest, db: DBSession, current_user: CurrentUse
 
 @router.post("/import")
 async def import_backup_route(
+    db: DBSession,
+    _: AdminUser,
     file: UploadFile = File(...),
-    db: DBSession = None,
-    _: AdminUser = None,
 ):
     """
     Import a previously exported backup zip.

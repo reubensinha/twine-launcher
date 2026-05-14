@@ -158,9 +158,9 @@ def set_global_builtin(theme_id: str, db: DBSession, _: AdminUser):
 
 @router.post("/global/custom")
 async def set_global_custom(
+    db: DBSession,
+    _: AdminUser,
     file: UploadFile = File(...),
-    db: DBSession = None,
-    _: AdminUser = None,
 ):
     """Upload a custom JSON theme file and set it as the global default. Admin only."""
     raw = await file.read()
@@ -196,9 +196,9 @@ def set_user_builtin(theme_id: str, db: DBSession, current_user: CurrentUser):
 
 @router.post("/user/custom")
 async def set_user_custom(
+    db: DBSession,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
-    db: DBSession = None,
-    current_user: CurrentUser = None,
 ):
     """Upload a custom JSON theme file and apply it to the current user."""
     raw = await file.read()

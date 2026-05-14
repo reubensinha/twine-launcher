@@ -188,6 +188,10 @@ export const backup = {
 
 export const configApi = {
   get: () => request<{ games_dir: string }>('/config'),
+  browse: (path: string) =>
+    request<{ current: string; parent: string | null; dirs: { name: string; path: string }[] }>(
+      `/config/browse?path=${encodeURIComponent(path)}`
+    ),
 };
 
 export const themeApi = {

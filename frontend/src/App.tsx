@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/auth';
 import { useThemeStore } from './store/theme';
 import { auth as authApi } from './api';
@@ -9,6 +9,7 @@ import { SetupPage }     from './pages/Setup';
 import { LibraryPage }   from './pages/Library';
 import { GamePage }      from './pages/GamePage';
 import { SettingsPage }  from './pages/Settings';
+import { ForceChangePasswordPage } from './pages/ForceChangePassword';
 import { AdminDashboard } from './pages/admin/Dashboard';
 import { UsersPage }      from './pages/admin/Users';
 import { BackupPage }     from './pages/admin/Backup';
@@ -16,8 +17,12 @@ import { Spinner }        from './components/ui';
 
 function RequireAuth({ children, adminOnly = false }: { children: JSX.Element; adminOnly?: boolean }) {
   const { user } = useAuthStore();
+  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />;
+  if (user.force_password_change && location.pathname !== '/force-change-password') {
+    return <Navigate to="/force-change-password" replace />;
+  }
   return children;
 }
 
@@ -71,6 +76,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/force-change-password" element={<RequireAuth><ForceChangePasswordPage /></RequireAuth>} />
       <Route path="/play/:id" element={<RequireAuth><GamePage /></RequireAuth>} />
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<LibraryPage />} />

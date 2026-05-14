@@ -14,6 +14,8 @@ export function UsersPage() {
   const [createOpen,  setCreateOpen]  = useState(false);
   const [newUser,     setNewUser]     = useState<UserCreate>(EMPTY);
   const [saving,      setSaving]      = useState(false);
+  const [resetResult, setResetResult] = useState<{ username: string; temp_password: string } | null>(null);
+  const [copied,      setCopied]      = useState(false);
   const [toast,       setToast]       = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
 
   const load = useCallback(async () => {
@@ -44,6 +46,16 @@ export function UsersPage() {
       load();
     } catch (err: unknown) {
       setToast({ msg: err instanceof Error ? err.message : 'Update failed', type: 'error' });
+    }
+  };
+
+  const handleReset = async (u: User) => {
+    try {
+      const { temp_password } = await usersApi.resetPassword(u.id);
+      setCopied(false);
+      setResetResult({ username: u.username, temp_password });
+    } catch (err: unknown) {
+      setToast({ msg: err instanceof Error ? err.message : 'Reset failed', type: 'error' });
     }
   };
 
@@ -94,6 +106,7 @@ export function UsersPage() {
                 <td style={{ padding: '0.9rem 0.75rem' }}>
                   {u.id !== self?.id && (
                     <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                      <Button size="sm" onClick={() => handleReset(u)}>Reset pw</Button>
                       <Button size="sm" onClick={() => handleToggle(u)} style={{ color: u.is_active ? 'var(--text-muted)' : 'var(--accent)' }}>
                         {u.is_active ? 'Deactivate' : 'Activate'}
                       </Button>
@@ -106,6 +119,29 @@ export function UsersPage() {
           </tbody>
         </table>
       )}
+
+      <Modal open={!!resetResult} onClose={() => setResetResult(null)} title="Password reset">
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          Temporary password for <strong style={{ color: 'var(--text)' }}>{resetResult?.username}</strong>.
+          Share it with the user — they'll be prompted to set a new password on their next login.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <code style={{
+            flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.9rem',
+            padding: '0.5rem 0.75rem', background: 'var(--bg)',
+            borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+            color: 'var(--text)', letterSpacing: '0.04em',
+          }}>
+            {resetResult?.temp_password}
+          </code>
+          <Button size="sm" variant={copied ? 'primary' : 'ghost'} onClick={() => {
+            navigator.clipboard.writeText(resetResult!.temp_password);
+            setCopied(true);
+          }}>
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add a user">
         <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

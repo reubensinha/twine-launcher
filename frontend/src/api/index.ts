@@ -97,6 +97,7 @@ export const users = {
   create: (p: UserCreate) => request<User>('/users/', { method: 'POST', body: JSON.stringify(p) }),
   update: (id: number, p: UserUpdate) => request<User>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
   delete: (id: number) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+  resetPassword: (id: number) => request<{ temp_password: string }>(`/users/${id}/reset-password`, { method: 'POST' }),
 };
 
 export const games = {

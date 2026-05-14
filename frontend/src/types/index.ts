@@ -6,6 +6,7 @@ export interface User {
   role: 'admin' | 'player';
   is_active: boolean;
   autosave_enabled: boolean;
+  force_password_change: boolean;
   created_at: string;
 }
 

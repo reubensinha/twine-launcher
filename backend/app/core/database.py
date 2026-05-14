@@ -55,6 +55,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     theme: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON theme override
     autosave_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
+    force_password_change: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     saves: Mapped[list[Save]] = relationship("Save", back_populates="user", cascade="all, delete-orphan")
@@ -177,6 +178,11 @@ def _apply_schema_patches_frozen() -> None:
         if "autosave_enabled" not in col_names:
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN autosave_enabled BOOLEAN NOT NULL DEFAULT '1'"
+            ))
+        # mirrors 0002_add_force_password_change.py
+        if "force_password_change" not in col_names:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN force_password_change BOOLEAN NOT NULL DEFAULT '0'"
             ))
 
 

@@ -79,6 +79,7 @@ class UserResponse(BaseModel):
     is_active: bool
     theme: Optional[str] = None
     autosave_enabled: bool = True
+    force_password_change: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

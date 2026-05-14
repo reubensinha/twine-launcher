@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore } from '../store/theme';
-import { Button, Input, Toast } from '../components/ui';
+import { Button, Input, Modal, Toast } from '../components/ui';
 
 export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { login } = useAuthStore();
   const { fetchActive } = useThemeStore();
   const navigate = useNavigate();
@@ -54,6 +55,24 @@ export function LoginPage() {
           </Button>
         </form>
       </div>
+      <button
+        onClick={() => setHelpOpen(true)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          fontFamily: 'var(--font-ui)', fontSize: '0.75rem', color: 'var(--text-muted)',
+          textDecoration: 'underline', textDecorationColor: 'var(--border)', marginTop: '-0.5rem',
+        }}
+      >
+        Forgot your password?
+      </button>
+
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Forgot your password?">
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>
+          Contact your Twine Launcher admin — they can reset your password from the Users page.
+          You'll receive a temporary password and be prompted to set a new one on your next login.
+        </p>
+      </Modal>
+
       {error && <Toast message={error} type="error" onDismiss={() => setError('')} />}
     </div>
   );

@@ -26,7 +26,7 @@ from backend.app.schemas import SetupRequest, TokenResponse, UserPrefsUpdate, Us
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
+    current_password: str = ""
     new_password: str
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -149,12 +149,14 @@ def update_me(payload: UserPrefsUpdate, session: DBSession, current_user: Curren
 
 @router.patch("/me/password", status_code=200)
 def change_password(body: ChangePasswordRequest, session: DBSession, current_user: CurrentUser):
-    """Change the current user's password. Requires the existing password."""
-    if not verify_password(body.current_password, current_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    """Change the current user's password. When force_password_change is set, skips current-password check."""
+    if not current_user.force_password_change:
+        if not verify_password(body.current_password, current_user.hashed_password):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
     user = session.get(User, current_user.id)
     user.hashed_password = hash_password(body.new_password)
+    user.force_password_change = False
     session.commit()
     return {"detail": "Password changed."}

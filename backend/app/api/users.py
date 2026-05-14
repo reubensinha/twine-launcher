@@ -2,6 +2,9 @@
 Users router — admin-only CRUD for user management.
 """
 
+import secrets
+import string
+
 from fastapi import APIRouter, HTTPException, status
 
 from backend.app.core.database import User
@@ -80,6 +83,20 @@ def update_user(user_id: int, payload: UserUpdate, session: DBSession, admin: Ad
     session.commit()
     session.refresh(user)
     return user
+
+
+@router.post("/{user_id}/reset-password", status_code=200)
+def reset_password(user_id: int, session: DBSession, _: AdminUser):
+    """Generate a temporary password for a user and force a change on next login. Admin only."""
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    alphabet = string.ascii_letters + string.digits
+    temp_pw = "".join(secrets.choice(alphabet) for _ in range(16))
+    user.hashed_password = hash_password(temp_pw)
+    user.force_password_change = True
+    session.commit()
+    return {"temp_password": temp_pw}
 
 
 @router.delete("/{user_id}", status_code=204)

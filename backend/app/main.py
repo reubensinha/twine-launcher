@@ -27,6 +27,51 @@ logging.basicConfig(
 settings = get_settings()
 
 
+def _check_recovery_file() -> None:
+    """Reset the first admin's password if a recovery.txt exists in the data directory.
+
+    Admin places a recovery.txt (containing their desired password, or anything) in the
+    data directory. On next startup the first active admin's password is reset to the file
+    contents (if ≥8 chars) or a generated 16-char password, force_password_change is set,
+    and the file is deleted. The new password is printed to the server log.
+    """
+    import secrets as _secrets
+    import string
+
+    db_url = settings.database_url
+    if db_url.startswith("sqlite:///"):
+        data_dir = Path(db_url[len("sqlite:///"):]).parent
+    else:
+        data_dir = Path("/data")
+
+    recovery_path = data_dir / "recovery.txt"
+    if not recovery_path.exists():
+        return
+
+    log = logging.getLogger("twine")
+    content = recovery_path.read_text().strip()
+    alphabet = string.ascii_letters + string.digits
+    new_password = content if len(content) >= 8 else "".join(_secrets.choice(alphabet) for _ in range(16))
+
+    from backend.app.core.database import User
+    from backend.app.core.security import hash_password
+
+    with Session(engine) as db:
+        admin = db.query(User).filter(User.role == "admin", User.is_active == True).first()  # noqa: E712
+        if admin:
+            admin.hashed_password = hash_password(new_password)
+            admin.force_password_change = True
+            db.commit()
+            log.warning(
+                "Recovery file found — admin '%s' password reset to: %s",
+                admin.username, new_password,
+            )
+        else:
+            log.warning("Recovery file found but no active admin account exists.")
+
+    recovery_path.unlink()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -35,6 +80,7 @@ async def lifespan(app: FastAPI):
     DB session rows to prevent permanent "game is running" states.
     """
     init_db()
+    _check_recovery_file()
 
     # Clear stale DB sessions from a previous run
     with Session(engine) as db:

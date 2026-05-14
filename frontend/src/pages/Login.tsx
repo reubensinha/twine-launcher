@@ -54,17 +54,20 @@ export function LoginPage() {
             Sign In
           </Button>
         </form>
+
+        <div style={{ textAlign: 'center' }}>
+          <button
+            onClick={() => setHelpOpen(true)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              fontFamily: 'var(--font-ui)', fontSize: '0.75rem', color: 'var(--text-muted)',
+              textDecoration: 'underline', textDecorationColor: 'var(--border)',
+            }}
+          >
+            Forgot your password?
+          </button>
+        </div>
       </div>
-      <button
-        onClick={() => setHelpOpen(true)}
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          fontFamily: 'var(--font-ui)', fontSize: '0.75rem', color: 'var(--text-muted)',
-          textDecoration: 'underline', textDecorationColor: 'var(--border)', marginTop: '-0.5rem',
-        }}
-      >
-        Forgot your password?
-      </button>
 
       <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Forgot your password?">
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.7 }}>

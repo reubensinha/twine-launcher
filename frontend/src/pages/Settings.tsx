@@ -216,41 +216,6 @@ export function SettingsPage() {
     }
   };
 
-  // ── Layout helpers ─────────────────────────────────────────────────────────
-
-  const Section = ({ title, description, children }: { title: string; description: string; children: React.ReactNode }) => (
-    <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
-      <h3 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: 400, marginBottom: '0.25rem' }}>{title}</h3>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>{description}</p>
-      {children}
-    </div>
-  );
-
-  const CategoryHeader = ({ label }: { label: string }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '2.5rem 0 1.5rem' }}>
-      <span style={{
-        fontFamily: 'var(--font-ui)', fontSize: '0.65rem', fontWeight: 600,
-        letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)',
-        whiteSpace: 'nowrap',
-      }}>{label}</span>
-      <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-    </div>
-  );
-
-  const ToggleRow = ({ label, description, checked, onChange, disabled }: {
-    label: string; description?: string; checked: boolean; onChange: () => void; disabled?: boolean;
-  }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-      <Toggle checked={checked} onChange={() => onChange()} disabled={disabled} />
-      <div>
-        <span style={{ fontSize: '0.82rem', color: 'var(--text)' }}>{label}</span>
-        {description && (
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{description}</span>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ padding: '2.5rem', maxWidth: 800, margin: '0 auto' }}>
       <div style={{ marginBottom: '2rem' }}>
@@ -477,6 +442,47 @@ export function SettingsPage() {
       </Modal>
 
       {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+    </div>
+  );
+}
+
+// ── Layout helpers ────────────────────────────────────────────────────────────
+
+function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '2rem', marginBottom: '2rem' }}>
+      <h3 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: 400, marginBottom: '0.25rem' }}>{title}</h3>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>{description}</p>
+      {children}
+    </div>
+  );
+}
+
+function CategoryHeader({ label }: { label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '2.5rem 0 1.5rem' }}>
+      <span style={{
+        fontFamily: 'var(--font-ui)', fontSize: '0.65rem', fontWeight: 600,
+        letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)',
+        whiteSpace: 'nowrap',
+      }}>{label}</span>
+      <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+    </div>
+  );
+}
+
+function ToggleRow({ label, description, checked, onChange, disabled }: {
+  label: string; description?: string; checked: boolean; onChange: () => void; disabled?: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <Toggle checked={checked} onChange={() => onChange()} disabled={disabled} />
+      <div>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text)' }}>{label}</span>
+        {description && (
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{description}</span>
+        )}
+      </div>
     </div>
   );
 }

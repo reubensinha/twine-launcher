@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { backup as backupApi } from '../../api';
 import { useAuthStore } from '../../store/auth';
 import { Button, Toast } from '../../components/ui';
+import { useToast } from '../../hooks/useToast';
 import type { BackupImportResult } from '../../types';
 
 export function BackupPage() {
@@ -11,7 +12,7 @@ export function BackupPage() {
   const [exporting,    setExporting]    = useState<'full' | 'saves-only' | null>(null);
   const [importing,    setImporting]    = useState<'full' | 'saves' | null>(null);
   const [importResult, setImportResult] = useState<BackupImportResult | null>(null);
-  const [toast,        setToast]        = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
+  const { toast, show: showToast, dismiss: dismissToast } = useToast();
   const fullFileRef  = useRef<HTMLInputElement>(null);
   const savesFileRef = useRef<HTMLInputElement>(null);
 
@@ -19,9 +20,9 @@ export function BackupPage() {
     setExporting(scope);
     try {
       const saved = await backupApi.export(scope);
-      if (saved) setToast({ msg: 'Backup saved.', type: 'success' });
+      if (saved) showToast('Backup saved.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Export failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Export failed', 'error');
     } finally { setExporting(null); }
   };
 
@@ -32,9 +33,9 @@ export function BackupPage() {
     try {
       const result = await backupApi.import(file);
       setImportResult(result);
-      setToast({ msg: 'Backup imported.', type: 'success' });
+      showToast('Backup imported.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Import failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Import failed', 'error');
     } finally {
       setImporting(null);
       e.target.value = '';
@@ -147,7 +148,7 @@ export function BackupPage() {
     └── files/{game}/`}</pre>
       </Section>
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

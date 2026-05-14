@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 from backend.app.core.database import Game, Save
 from backend.app.core.dependencies import CurrentUser, DBSession
+from backend.app.core.utils import get_or_404, get_user_save
 from backend.app.schemas import SavePayload, SaveResponse
 
 router = APIRouter(prefix="/saves", tags=["saves"])
@@ -19,13 +20,9 @@ router = APIRouter(prefix="/saves", tags=["saves"])
 @router.get("/{game_id}", response_model=SaveResponse)
 def get_saves(game_id: int, session: DBSession, current_user: CurrentUser):
     """Return this user's save data for a game."""
-    if not session.get(Game, game_id):
-        raise HTTPException(status_code=404, detail="Game not found")
+    get_or_404(session, Game, game_id, "Game")
 
-    record = session.query(Save).filter(
-        Save.game_id == game_id,
-        Save.user_id == current_user.id,
-    ).first()
+    record = get_user_save(session, game_id, current_user.id)
     if not record:
         raise HTTPException(status_code=404, detail="No save data found")
 
@@ -43,13 +40,9 @@ def upsert_saves(game_id: int, payload: SavePayload, session: DBSession, current
     Upsert this user's localStorage snapshot for a game.
     Called by the iframe wrapper's polling script on every detected change.
     """
-    if not session.get(Game, game_id):
-        raise HTTPException(status_code=404, detail="Game not found")
+    get_or_404(session, Game, game_id, "Game")
 
-    record = session.query(Save).filter(
-        Save.game_id == game_id,
-        Save.user_id == current_user.id,
-    ).first()
+    record = get_user_save(session, game_id, current_user.id)
     logger.info(
         "save_sync game_id=%d user_id=%d key_count=%d keys=%s",
         game_id,
@@ -86,10 +79,7 @@ def upsert_saves(game_id: int, payload: SavePayload, session: DBSession, current
 @router.delete("/{game_id}", status_code=204)
 def delete_saves(game_id: int, session: DBSession, current_user: CurrentUser):
     """Wipe this user's save data for a game (fresh start)."""
-    record = session.query(Save).filter(
-        Save.game_id == game_id,
-        Save.user_id == current_user.id,
-    ).first()
+    record = get_user_save(session, game_id, current_user.id)
     if record:
         session.delete(record)
         session.commit()

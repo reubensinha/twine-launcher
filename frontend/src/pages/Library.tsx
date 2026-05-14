@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { games as gamesApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { Button, Modal, Input, Toast, Spinner } from '../components/ui';
+import { useToast } from '../hooks/useToast';
+import { useDataFetch } from '../hooks/useDataFetch';
 
 // ── File-name helpers ─────────────────────────────────────────────────────────
 
@@ -19,19 +21,10 @@ export function LibraryPage() {
   const { user }   = useAuthStore();
   const navigate   = useNavigate();
   const isAdmin    = user?.role === 'admin';
-  const [gameList, setGameList] = useState<Game[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [addOpen,  setAddOpen]  = useState(false);
-  const [saving,   setSaving]   = useState(false);
-  const [toast,    setToast]    = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setGameList(await gamesApi.list()); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const { toast, show: showToast, dismiss: dismissToast } = useToast();
+  const { data: gameList, loading, reload: load } = useDataFetch(gamesApi.list);
 
   const handlePlay = (game: Game) => {
     navigate(`/play/${game.id}`);
@@ -41,10 +34,10 @@ export function LibraryPage() {
     if (!confirm(`Remove "${game.name}" from the library?\nThis also deletes all save data for this game.`)) return;
     try {
       await gamesApi.delete(game.id);
-      setToast({ msg: `"${game.name}" removed.`, type: 'info' });
+      showToast(`"${game.name}" removed.`, 'info');
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Remove failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Remove failed', 'error');
     }
   };
 
@@ -52,11 +45,11 @@ export function LibraryPage() {
     setSaving(true);
     try {
       await gamesApi.upload({ name, description: description || undefined, zipFile, folderFiles, folderPaths });
-      setToast({ msg: `"${name}" added.`, type: 'success' });
+      showToast(`"${name}" added.`, 'success');
       setAddOpen(false);
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed to add game', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed to add game', 'error');
     } finally {
       setSaving(false);
     }
@@ -99,7 +92,7 @@ export function LibraryPage() {
         onSubmit={handleAdd}
       />
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

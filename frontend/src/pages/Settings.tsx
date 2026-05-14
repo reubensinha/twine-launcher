@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { auth, configApi, themeApi } from '../api';
+import { validatePassword, MIN_PASSWORD_LENGTH } from '../utils';
+import { useToast } from '../hooks/useToast';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
 import { Button, Input, Modal, Toggle, Toast } from '../components/ui';
@@ -11,7 +13,7 @@ export function SettingsPage() {
   const { builtins, fetchBuiltins, fetchActive, active, source } = useThemeStore();
   const [globalSaving, setGlobalSaving] = useState<string | null>(null);
   const [userSaving,   setUserSaving]   = useState<string | null>(null);
-  const [toast, setToast]               = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
+  const { toast, show: showToast, dismiss: dismissToast } = useToast();
   const globalFileRef  = useRef<HTMLInputElement>(null);
   const userFileRef    = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
@@ -64,14 +66,15 @@ export function SettingsPage() {
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const changePassword = async () => {
-    if (pwNew.length < 8) { setToast({ msg: 'New password must be at least 8 characters.', type: 'error' }); return; }
+    const pwErr = validatePassword(pwNew);
+    if (pwErr) { showToast(pwErr, 'error'); return; }
     setPwSaving(true);
     try {
       await auth.changePassword(pwCurrent, pwNew);
       setPwCurrent(''); setPwNew('');
-      setToast({ msg: 'Password changed.', type: 'success' });
+      showToast('Password changed.', 'success');
     } catch (err) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed to change password.', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed to change password.', 'error');
     } finally { setPwSaving(false); }
   };
 
@@ -81,9 +84,9 @@ export function SettingsPage() {
       const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart');
       if (autostart) await disable(); else await enable();
       setAutostart(await isEnabled());
-      setToast({ msg: autostart ? 'Removed from startup.' : 'Will launch on startup.', type: 'success' });
+      showToast(autostart ? 'Removed from startup.' : 'Will launch on startup.', 'success');
     } catch {
-      setToast({ msg: 'Failed to update startup setting.', type: 'error' });
+      showToast('Failed to update startup setting.', 'error');
     } finally { setAutostartLoading(false); }
   };
 
@@ -94,25 +97,25 @@ export function SettingsPage() {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('save_external_access', { allow: next });
       setExternalAccess(next);
-      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+      showToast('Saved — quit and relaunch Twine Launcher to apply.', 'success');
     } catch {
-      setToast({ msg: 'Failed to update setting.', type: 'error' });
+      showToast('Failed to update setting.', 'error');
     } finally { setExternalAccessLoading(false); }
   };
 
   const savePort = async () => {
     const p = parseInt(editPort, 10);
     if (isNaN(p) || p < 1024 || p > 65535) {
-      setToast({ msg: 'Port must be a number between 1024 and 65535.', type: 'error' });
+      showToast('Port must be a number between 1024 and 65535.', 'error');
       return;
     }
     setPortSaving(true);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('save_external_port', { port: p });
-      setToast({ msg: 'Port saved — quit and relaunch to apply.', type: 'success' });
+      showToast('Port saved — quit and relaunch to apply.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : String(err), type: 'error' });
+      showToast(err instanceof Error ? err.message : String(err), 'error');
     } finally { setPortSaving(false); }
   };
 
@@ -126,9 +129,9 @@ export function SettingsPage() {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('save_games_dir', { gamesDir: editGamesDir });
       setGamesDirCfg(c => c ? { ...c, games_dir: editGamesDir } : c);
-      setToast({ msg: 'Saved — quit and relaunch Twine Launcher to apply.', type: 'success' });
+      showToast('Saved — quit and relaunch Twine Launcher to apply.', 'success');
     } catch (err) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed to save', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
     } finally { setDirSaving(false); }
   };
 
@@ -137,9 +140,9 @@ export function SettingsPage() {
     const next = !(user?.autosave_enabled ?? true);
     try {
       await updatePrefs({ autosave_enabled: next });
-      setToast({ msg: next ? 'Autosave enabled.' : 'Autosave disabled.', type: 'success' });
+      showToast(next ? 'Autosave enabled.' : 'Autosave disabled.', 'success');
     } catch {
-      setToast({ msg: 'Failed to update autosave setting.', type: 'error' });
+      showToast('Failed to update autosave setting.', 'error');
     } finally { setAutosaveSaving(false); }
   };
 
@@ -149,9 +152,9 @@ export function SettingsPage() {
     try {
       await themeApi.setGlobalBuiltin(id);
       await fetchActive();
-      setToast({ msg: 'Global theme updated.', type: 'success' });
+      showToast('Global theme updated.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     } finally { setGlobalSaving(null); }
   };
 
@@ -159,9 +162,9 @@ export function SettingsPage() {
     try {
       await themeApi.resetGlobal();
       await fetchActive();
-      setToast({ msg: 'Global theme reset to Classic.', type: 'info' });
+      showToast('Global theme reset to Classic.', 'info');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     }
   };
 
@@ -171,9 +174,9 @@ export function SettingsPage() {
     try {
       await themeApi.setGlobalCustom(file);
       await fetchActive();
-      setToast({ msg: 'Custom global theme applied.', type: 'success' });
+      showToast('Custom global theme applied.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     } finally {
       setGlobalSaving(null);
       if (globalFileRef.current) globalFileRef.current.value = '';
@@ -185,9 +188,9 @@ export function SettingsPage() {
     try {
       await themeApi.setUserBuiltin(id);
       await fetchActive();
-      setToast({ msg: 'Your theme updated.', type: 'success' });
+      showToast('Your theme updated.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     } finally { setUserSaving(null); }
   };
 
@@ -195,9 +198,9 @@ export function SettingsPage() {
     try {
       await themeApi.resetUser();
       await fetchActive();
-      setToast({ msg: 'Reverted to default theme.', type: 'info' });
+      showToast('Reverted to default theme.', 'info');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     }
   };
 
@@ -207,9 +210,9 @@ export function SettingsPage() {
     try {
       await themeApi.setUserCustom(file);
       await fetchActive();
-      setToast({ msg: 'Custom theme applied.', type: 'success' });
+      showToast('Custom theme applied.', 'success');
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed', 'error');
     } finally {
       setUserSaving(null);
       if (userFileRef.current) userFileRef.current.value = '';
@@ -242,7 +245,7 @@ export function SettingsPage() {
           <Input
             type="password"
             label="New password"
-            placeholder="New password (8+ characters)"
+            placeholder={`New password (${MIN_PASSWORD_LENGTH}+ characters)`}
             value={pwNew}
             onChange={e => setPwNew(e.target.value)}
             autoComplete="new-password"
@@ -441,7 +444,7 @@ export function SettingsPage() {
         </p>
       </Modal>
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

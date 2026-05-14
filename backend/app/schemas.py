@@ -33,8 +33,8 @@ class SetupRequest(BaseModel):
     @classmethod
     def password_min_length(cls, v: str) -> str:
         """Enforce a minimum password length."""
-        if len(v) < 6:
-            raise ValueError("Password must be at least 6 characters")
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
         return v
 
 

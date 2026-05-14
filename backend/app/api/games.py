@@ -17,9 +17,10 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import HTMLResponse
 
 from backend.app.core.config import get_settings
-from backend.app.core.database import Game, GameSession, Save
+from backend.app.core.database import Game, GameSession
 from backend.app.core.dependencies import AdminUser, CurrentUser, DBSession
 from backend.app.core.session_registry import registry
+from backend.app.core.utils import get_or_404, get_user_save
 from backend.app.schemas import GameCreate, GameResponse, GameUpdate
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -99,6 +100,34 @@ def _find_cover(files: list[str]) -> Optional[str]:
         if Path(f).name.lower() in _COVER_NAMES:
             return f
     return None
+
+
+def _check_game_available(session, game_id: int) -> Game:
+    """Return the game if it exists and has no active session; raise 404/409 otherwise."""
+    game = get_or_404(session, Game, game_id, "Game")
+    active = registry.get(game_id)
+    if active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'"{game.name}" is already open (opened by {active.username})',
+        )
+    return game
+
+
+def _create_game_session(session, game_id: int, current_user, game_name: str) -> GameSession:
+    """Create a GameSession row and register it in the in-memory registry."""
+    db_session = GameSession(game_id=game_id, user_id=current_user.id)
+    session.add(db_session)
+    session.commit()
+    session.refresh(db_session)
+    registry.register(
+        session_id=db_session.id,
+        game_id=game_id,
+        user_id=current_user.id,
+        username=current_user.username,
+        game_name=game_name,
+    )
+    return db_session
 
 
 @router.get("/", response_model=list[GameResponse])
@@ -204,18 +233,13 @@ async def upload_game(
 @router.get("/{game_id}", response_model=GameResponse)
 def get_game(game_id: int, session: DBSession, _: CurrentUser):
     """Get a single game by ID."""
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    return game
+    return get_or_404(session, Game, game_id, "Game")
 
 
 @router.patch("/{game_id}", response_model=GameResponse)
 def update_game(game_id: int, payload: GameUpdate, session: DBSession, _: AdminUser):
     """Update game metadata. Admin only."""
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+    game = get_or_404(session, Game, game_id, "Game")
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(game, field, value)
     session.commit()
@@ -226,9 +250,7 @@ def update_game(game_id: int, payload: GameUpdate, session: DBSession, _: AdminU
 @router.delete("/{game_id}", status_code=204)
 def delete_game(game_id: int, session: DBSession, _: AdminUser):
     """Remove a game and all associated saves/sessions. Admin only."""
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+    game = get_or_404(session, Game, game_id, "Game")
     registry.close(game_id)
     session.delete(game)
     session.commit()
@@ -240,34 +262,10 @@ def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
     Create a game session and return JSON connection info for the React player.
     Returns: session_id, game_url, initial_saves (dict).
     """
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+    game = _check_game_available(session, game_id)
+    db_session = _create_game_session(session, game_id, current_user, game.name)
 
-    active = registry.get(game_id)
-    if active:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f'"{game.name}" is already open (opened by {active.username})',
-        )
-
-    db_session = GameSession(game_id=game_id, user_id=current_user.id)
-    session.add(db_session)
-    session.commit()
-    session.refresh(db_session)
-
-    registry.register(
-        session_id=db_session.id,
-        game_id=game_id,
-        user_id=current_user.id,
-        username=current_user.username,
-        game_name=game.name,
-    )
-
-    save_record = session.query(Save).filter(
-        Save.game_id == game_id,
-        Save.user_id == current_user.id,
-    ).first()
+    save_record = get_user_save(session, game_id, current_user.id)
     initial_saves = json.loads(save_record.data) if save_record else {}
 
     logger.info(
@@ -305,38 +303,10 @@ def play_game(game_id: int, session: DBSession, current_user: CurrentUser):
        and syncs them back to the server.
     5. On tab close, the session is cleaned up via DELETE /sessions/{id}.
     """
-    game = session.get(Game, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+    game = _check_game_available(session, game_id)
+    db_session = _create_game_session(session, game_id, current_user, game.name)
 
-    # Single-instance enforcement
-    active = registry.get(game_id)
-    if active:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f'"{game.name}" is already open (opened by {active.username})',
-        )
-
-    # Create DB session record
-    db_session = GameSession(game_id=game_id, user_id=current_user.id)
-    session.add(db_session)
-    session.commit()
-    session.refresh(db_session)
-
-    # Register in memory
-    registry.register(
-        session_id=db_session.id,
-        game_id=game_id,
-        user_id=current_user.id,
-        username=current_user.username,
-        game_name=game.name,
-    )
-
-    # Load this user's saves
-    save_record = session.query(Save).filter(
-        Save.game_id == game_id,
-        Save.user_id == current_user.id,
-    ).first()
+    save_record = get_user_save(session, game_id, current_user.id)
     initial_saves = save_record.data if save_record else "{}"
 
     game_url = f"/static/games/{game.file_path}"

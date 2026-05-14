@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore } from '../store/theme';
 import { Button, Input, Toast } from '../components/ui';
+import { validatePassword } from '../utils';
 
 export function SetupPage({ onComplete }: { onComplete?: () => void }) {
   const [username, setUsername] = useState('');
@@ -16,8 +17,9 @@ export function SetupPage({ onComplete }: { onComplete?: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirm) { setError('Passwords do not match'); return; }
-    if (password.length < 6)  { setError('Password must be at least 6 characters'); return; }
+    if (password !== confirm)          { setError('Passwords do not match'); return; }
+    const pwErr = validatePassword(password);
+    if (pwErr)                         { setError(pwErr); return; }
     setLoading(true);
     try {
       await setup(username, password);

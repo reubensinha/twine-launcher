@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth as authApi } from '../api';
 import { useAuthStore } from '../store/auth';
+import { validatePassword } from '../utils';
 import { Button, Input } from '../components/ui';
 
 export function ForceChangePasswordPage() {
@@ -13,7 +14,8 @@ export function ForceChangePasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPw.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    const pwErr = validatePassword(newPw);
+    if (pwErr) { setError(pwErr); return; }
     setSaving(true);
     setError(null);
     try {

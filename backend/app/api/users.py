@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from backend.app.core.database import User
 from backend.app.core.dependencies import AdminUser, DBSession
 from backend.app.core.security import hash_password
+from backend.app.core.utils import get_or_404
 from backend.app.schemas import UserCreate, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -43,18 +44,13 @@ def create_user(payload: UserCreate, session: DBSession, _: AdminUser):
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(user_id: int, session: DBSession, _: AdminUser):
     """Get a user by ID. Admin only."""
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return get_or_404(session, User, user_id, "User")
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(user_id: int, payload: UserUpdate, session: DBSession, admin: AdminUser):
     """Update a user's details. Admin only."""
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = get_or_404(session, User, user_id, "User")
 
     if payload.username is not None:
         existing = session.query(User).filter(
@@ -88,9 +84,7 @@ def update_user(user_id: int, payload: UserUpdate, session: DBSession, admin: Ad
 @router.post("/{user_id}/reset-password", status_code=200)
 def reset_password(user_id: int, session: DBSession, _: AdminUser):
     """Generate a temporary password for a user and force a change on next login. Admin only."""
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = get_or_404(session, User, user_id, "User")
     alphabet = string.ascii_letters + string.digits
     temp_pw = "".join(secrets.choice(alphabet) for _ in range(16))
     user.hashed_password = hash_password(temp_pw)
@@ -107,8 +101,6 @@ def delete_user(user_id: int, session: DBSession, admin: AdminUser):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot delete your own account",
         )
-    user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = get_or_404(session, User, user_id, "User")
     session.delete(user)
     session.commit()

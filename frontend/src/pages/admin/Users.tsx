@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { users as usersApi } from '../../api';
 import { useAuthStore } from '../../store/auth';
 import { Button, Modal, Input, Select, Toast, Spinner } from '../../components/ui';
+import { useToast } from '../../hooks/useToast';
+import { useDataFetch } from '../../hooks/useDataFetch';
 import type { User, UserCreate } from '../../types';
 
 const ROLE_OPTIONS = [{ value: 'player', label: 'Player' }, { value: 'admin', label: 'Admin' }];
@@ -9,34 +11,25 @@ const EMPTY: UserCreate = { username: '', password: '', role: 'player' };
 
 export function UsersPage() {
   const { user: self } = useAuthStore();
-  const [userList, setUserList] = useState<User[]>([]);
-  const [loading,     setLoading]     = useState(true);
   const [createOpen,  setCreateOpen]  = useState(false);
   const [newUser,     setNewUser]     = useState<UserCreate>(EMPTY);
   const [saving,      setSaving]      = useState(false);
   const [resetResult, setResetResult] = useState<{ username: string; temp_password: string } | null>(null);
   const [copied,      setCopied]      = useState(false);
-  const [toast,       setToast]       = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setUserList(await usersApi.list()); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  const { toast, show: showToast, dismiss: dismissToast } = useToast();
+  const { data: userList, loading, reload: load } = useDataFetch(usersApi.list);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
       await usersApi.create(newUser);
-      setToast({ msg: `User "${newUser.username}" created.`, type: 'success' });
+      showToast(`User "${newUser.username}" created.`, 'success');
       setCreateOpen(false);
       setNewUser(EMPTY);
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Create failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Create failed', 'error');
     } finally { setSaving(false); }
   };
 
@@ -45,7 +38,7 @@ export function UsersPage() {
       await usersApi.update(u.id, { is_active: !u.is_active });
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Update failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Update failed', 'error');
     }
   };
 
@@ -55,7 +48,7 @@ export function UsersPage() {
       setCopied(false);
       setResetResult({ username: u.username, temp_password });
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Reset failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Reset failed', 'error');
     }
   };
 
@@ -63,10 +56,10 @@ export function UsersPage() {
     if (!confirm(`Delete "${u.username}"? This will remove all their save data.`)) return;
     try {
       await usersApi.delete(u.id);
-      setToast({ msg: `"${u.username}" deleted.`, type: 'info' });
+      showToast(`"${u.username}" deleted.`, 'info');
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Delete failed', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Delete failed', 'error');
     }
   };
 
@@ -155,7 +148,7 @@ export function UsersPage() {
         </form>
       </Modal>
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

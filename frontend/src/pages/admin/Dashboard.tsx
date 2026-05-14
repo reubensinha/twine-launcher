@@ -1,21 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect } from 'react';
 import { sessions as sessionsApi } from '../../api';
 import { Button, Toast, Spinner } from '../../components/ui';
+import { useToast } from '../../hooks/useToast';
+import { useDataFetch } from '../../hooks/useDataFetch';
 import type { GameSession } from '../../types';
 
 export function AdminDashboard() {
-  const [sessionList, setSessionList] = useState<GameSession[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [toast,    setToast]    = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setSessionList(await sessionsApi.list()); }
-    finally { setLoading(false); }
-  }, []);
+  const { toast, show: showToast, dismiss: dismissToast } = useToast();
+  const { data: sessionList, loading, reload: load } = useDataFetch(sessionsApi.list);
 
   useEffect(() => {
-    load();
     const id = setInterval(load, 10000);
     return () => clearInterval(id);
   }, [load]);
@@ -24,10 +18,10 @@ export function AdminDashboard() {
     if (!confirm(`Force-close "${s.game_name}"?\nAny unsaved progress may be lost.`)) return;
     try {
       await sessionsApi.close(s.id);
-      setToast({ msg: `Session for "${s.game_name}" closed.`, type: 'success' });
+      showToast(`Session for "${s.game_name}" closed.`, 'success');
       load();
     } catch (err: unknown) {
-      setToast({ msg: err instanceof Error ? err.message : 'Failed to close session', type: 'error' });
+      showToast(err instanceof Error ? err.message : 'Failed to close session', 'error');
     }
   };
 
@@ -78,7 +72,7 @@ export function AdminDashboard() {
         </table>
       )}
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

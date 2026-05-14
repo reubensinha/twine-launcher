@@ -12,8 +12,9 @@ export function SettingsPage() {
   const [globalSaving, setGlobalSaving] = useState<string | null>(null);
   const [userSaving,   setUserSaving]   = useState<string | null>(null);
   const [toast, setToast]               = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
-  const globalFileRef = useRef<HTMLInputElement>(null);
-  const userFileRef   = useRef<HTMLInputElement>(null);
+  const globalFileRef  = useRef<HTMLInputElement>(null);
+  const userFileRef    = useRef<HTMLInputElement>(null);
+  const gamesDirRef    = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
 
   const [autostart, setAutostart]                             = useState(false);
@@ -117,15 +118,14 @@ export function SettingsPage() {
     } finally { setPortSaving(false); }
   };
 
-  const browseGamesDir = async () => {
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const dir = await open({ directory: true, defaultPath: editGamesDir || undefined });
-      if (typeof dir === 'string') setEditGamesDir(dir);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
-      setToast({ msg: msg || 'Could not open folder picker.', type: 'error' });
-    }
+  const browseGamesDir = () => gamesDirRef.current?.click();
+
+  const handleGamesDirPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const path = (file as File & { path?: string }).path;
+    if (path) setEditGamesDir(path.replace(/[/\\][^/\\]+$/, ''));
+    e.target.value = '';
   };
 
   const saveGamesDir = async () => {
@@ -374,6 +374,8 @@ export function SettingsPage() {
           description="Where Twine Launcher looks for your HTML game files. Changes take effect after quitting and relaunching."
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <input ref={gamesDirRef} type="file" onChange={handleGamesDirPick} style={{ display: 'none' }}
+              {...{ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>} />
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input
                 value={editGamesDir}

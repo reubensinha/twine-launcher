@@ -65,8 +65,8 @@ TWINE_GAMES_DIR=/tmp/games python -m pytest backend/tests/ -v
 
 ```bash
 cd frontend
-npm install
-npm run dev   # proxies /api to localhost:8000
+yarn install
+yarn dev   # proxies /api to localhost:8000
 ```
 
 ### Windows Desktop App
@@ -167,17 +167,16 @@ twine-launcher-backup/
 
 All prefixed with `TWINE_`:
 
-| Variable                            | Default                             | Description                   |
-| ----------------------------------- | ----------------------------------- | ----------------------------- |
-| `TWINE_SECRET_KEY`                  | `change-me-in-production`           | JWT signing key — change this |
-| `TWINE_DATABASE_URL`                | `sqlite:////data/twine_launcher.db` | SQLAlchemy DB URL             |
-| `TWINE_GAMES_DIR`                   | `/games`                            | Path to Twine HTML files      |
-| `TWINE_ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                              | JWT lifetime (24h)            |
-| `TWINE_DEBUG`                       | `false`                             | Enable FastAPI debug mode     |
+| Variable                            | Default                             | Description                                             |
+| ----------------------------------- | ----------------------------------- | ------------------------------------------------------- |
+| `TWINE_SECRET_KEY`                  | `change-me-in-production`           | JWT signing key — change this                           |
+| `TWINE_DATABASE_URL`                | `sqlite:////data/twine_launcher.db` | SQLAlchemy DB URL                                       |
+| `TWINE_GAMES_DIR`                   | `/games`                            | Path to Twine HTML files                                |
+| `TWINE_ACCESS_TOKEN_EXPIRE_MINUTES` | `60`                                | Access token lifetime (1h); refresh tokens last 30 days |
+| `TWINE_DEBUG`                       | `false`                             | Enable FastAPI debug mode                               |
 
 ## Short Term Roadmap
 
-- [ ] Web-based game sources (Open a website that already hosts a Twine game like any other browser, only we will save and load the browser localstorage/cache)
 - [ ] Prepare to upload on Winget
 - [ ] Figure out how to deal with providing software updates.
 
@@ -208,6 +207,7 @@ All prefixed with `TWINE_`:
 
 ## Long Term Roadmap
 
+- [ ] Web-based game sources (add a game by URL; launcher fetches and caches the HTML, injects a `<base href>` so external assets resolve correctly, and serves it same-origin so save sync works unchanged)
 - [ ] Playnite library add-on
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
 - [ ] Accessible quick settings when inside a game

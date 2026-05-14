@@ -106,7 +106,7 @@ def export_backup(db: Session, scope: str, user_id: int | None = None) -> bytes:
     return buf.read()
 
 
-def import_backup(db: Session, zip_bytes: bytes) -> dict:
+def import_backup(db: Session, zip_bytes: bytes, allow_full: bool = False) -> dict:
     """
     Import a backup zip, restoring saves and optionally game metadata.
 
@@ -130,6 +130,9 @@ def import_backup(db: Session, zip_bytes: bytes) -> dict:
             )
 
         scope = manifest.get("scope", "saves-only")
+
+        if scope == "full" and not allow_full:
+            raise ValueError("Restoring a full backup requires admin access")
 
         # ── Restore game metadata (full backup) ────────────────────────────────
         if scope == "full":

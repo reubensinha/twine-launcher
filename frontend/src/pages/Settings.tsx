@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { auth, backup, configApi, themeApi } from '../api';
+import { auth, configApi, themeApi } from '../api';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type BuiltinTheme, type ThemeData } from '../store/theme';
 import { Button, Input, Modal, Toggle, Toast } from '../components/ui';
@@ -31,7 +31,6 @@ export function SettingsPage() {
   const [pwNew, setPwNew]                                     = useState('');
   const [pwSaving, setPwSaving]                               = useState(false);
   const [themeHelpOpen, setThemeHelpOpen]                     = useState(false);
-  const [exporting, setExporting]                             = useState<'saves-only' | null>(null);
 
   useEffect(() => { fetchBuiltins(); }, [fetchBuiltins]);
 
@@ -144,12 +143,6 @@ export function SettingsPage() {
     } finally { setAutosaveSaving(false); }
   };
 
-  const downloadSavesBackup = async () => {
-    setExporting('saves-only');
-    try { await backup.export('saves-only'); }
-    catch { setToast({ msg: 'Export failed.', type: 'error' }); }
-    finally { setExporting(null); }
-  };
 
   const setGlobalBuiltin = async (id: string) => {
     setGlobalSaving(id);
@@ -421,22 +414,6 @@ export function SettingsPage() {
           onChange={toggleAutosave}
           disabled={autosaveSaving}
         />
-      </Section>
-
-      {/* ── BACKUP ───────────────────────────────────────────────────────────── */}
-      <CategoryHeader label="Backup" />
-
-      <Section title="My saves" description="Export your save data as a portable zip file. You can restore it later via a full import.">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <Button size="sm" loading={exporting === 'saves-only'} onClick={downloadSavesBackup}>
-            ↓ Download saves backup
-          </Button>
-          {isAdmin && (
-            <a href="/admin/backup" style={{ fontSize: '0.82rem', color: 'var(--accent)', textDecoration: 'none' }}>
-              Full backup &amp; restore →
-            </a>
-          )}
-        </div>
       </Section>
 
       {/* ── APPEARANCE ───────────────────────────────────────────────────────── */}

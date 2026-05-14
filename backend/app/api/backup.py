@@ -37,13 +37,13 @@ def export(payload: BackupExportRequest, db: DBSession, current_user: CurrentUse
 @router.post("/import")
 async def import_backup_route(
     db: DBSession,
-    _: AdminUser,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
 ):
     """
     Import a previously exported backup zip.
-    Restores saves and (for full backups) game metadata and files.
-    Returns a summary of what was restored.
+    All users may import a saves-only backup (saves are matched to users by username).
+    Full backup restore (games + all saves) requires admin.
     """
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(
@@ -52,9 +52,11 @@ async def import_backup_route(
         )
 
     zip_bytes = await file.read()
+    allow_full = current_user.role == "admin"
     try:
-        summary = import_backup(db, zip_bytes)
+        summary = import_backup(db, zip_bytes, allow_full=allow_full)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        status_code = status.HTTP_403_FORBIDDEN if "admin" in str(e) else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=status_code, detail=str(e))
 
     return summary

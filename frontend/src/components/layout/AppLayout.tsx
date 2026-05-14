@@ -30,11 +30,11 @@ export function AppLayout() {
 
         <nav style={{ display: 'flex', gap: '1.5rem', flex: 1, alignItems: 'center' }}>
           <NavLink to="/" end style={({ isActive }) => linkStyle(isActive)}>Library</NavLink>
+          <NavLink to="/backup" style={({ isActive }) => linkStyle(isActive)}>Backup</NavLink>
           {user?.role === 'admin' && (
             <>
-              <NavLink to="/admin"        style={({ isActive }) => linkStyle(isActive)}>Sessions</NavLink>
-              <NavLink to="/admin/users"  style={({ isActive }) => linkStyle(isActive)}>Users</NavLink>
-              <NavLink to="/admin/backup" style={({ isActive }) => linkStyle(isActive)}>Backup</NavLink>
+              <NavLink to="/admin"       style={({ isActive }) => linkStyle(isActive)}>Sessions</NavLink>
+              <NavLink to="/admin/users" style={({ isActive }) => linkStyle(isActive)}>Users</NavLink>
             </>
           )}
         </nav>

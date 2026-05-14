@@ -77,7 +77,8 @@ function AppRouter() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin"        element={<RequireAuth adminOnly><AdminDashboard /></RequireAuth>} />
         <Route path="/admin/users"  element={<RequireAuth adminOnly><UsersPage /></RequireAuth>} />
-        <Route path="/admin/backup" element={<RequireAuth adminOnly><BackupPage /></RequireAuth>} />
+        <Route path="/backup"       element={<RequireAuth><BackupPage /></RequireAuth>} />
+        <Route path="/admin/backup" element={<Navigate to="/backup" replace />} />
       </Route>
       <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
     </Routes>

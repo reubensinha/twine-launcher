@@ -132,23 +132,7 @@ export function BackupPage() {
         </div>
       </Section>
 
-      {/* ── Backup format ──────────────────────────────────────────────────── */}
-      <Section title="Backup format" description="Backups are portable zip files with a human-readable layout.">
-        <pre style={{
-          fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)',
-          lineHeight: 1.8, background: 'var(--surface)', padding: '1rem 1.25rem',
-          borderRadius: 'var(--radius)', overflow: 'auto',
-        }}>{`twine-launcher-backup/
-├── manifest.json          { version, scope, exported_at }
-├── saves/
-│   └── {username}/
-│       └── {game-name}.json
-└── games/                 full backup only
-    ├── library.json
-    └── files/{game}/`}</pre>
-      </Section>
-
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
+{toast && <Toast message={toast.msg} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

@@ -33,14 +33,18 @@ If the admin account is locked out and there is no other admin to perform a rese
    - The file contents become the new password if they are 8+ characters long.
    - Leave the file empty (or with fewer than 8 characters) to have a random 16-character password generated instead.
 2. Restart the container:
+
    ```bash
    docker compose restart
    ```
+
 3. Check the container logs for the new temporary password:
+
    ```bash
    docker compose logs | grep "Recovery file"
    # Recovery file found — admin 'admin' password reset to: aB3xK9mLqR2vNpYw
    ```
+
 4. Log in with the temporary password. You are immediately prompted to set a new password.
 5. Confirm that `recovery.txt` has been deleted — the server removes it automatically on startup.
 

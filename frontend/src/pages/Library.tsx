@@ -223,8 +223,8 @@ function AddGameModal({ open, saving, onClose, onSubmit }: {
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1, padding: '0.5rem', cursor: 'pointer', border: 'none', borderRadius: 'var(--radius)',
     fontFamily: 'var(--font-ui)', fontSize: '0.82rem',
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-muted)',
+    background: active ? 'var(--bg)' : 'transparent',
+    color: active ? 'var(--accent)' : 'var(--text-muted)',
     transition: 'background var(--transition), color var(--transition)',
   });
 

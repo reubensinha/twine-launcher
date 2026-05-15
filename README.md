@@ -2,6 +2,17 @@
 
 Self-hosted Twine game library with cross-device save sync, multi-user support, and role-based access control. Available as a **Docker container** (for servers and home labs) and a **Windows desktop app**.
 
+---
+
+<!-- Screenshots — replace these placeholders with real images before publishing -->
+![Game library](docs/screenshots/library.png)
+
+![In-game view with save controls](docs/screenshots/game-player.png)
+
+![Admin user management](docs/screenshots/admin-users.png)
+
+---
+
 ## Features
 
 - **Save sync** — localStorage data is persisted server-side and restored on every launch, across any device or browser
@@ -11,7 +22,7 @@ Self-hosted Twine game library with cross-device save sync, multi-user support, 
 - **Force-close sessions** — admins can close any active session from the dashboard
 - **Backup / restore** — export full (game files + saves) or saves-only backups as portable zip files
 - **Themes** — 5 built-in themes plus custom JSON upload; global default set by admin, users can override personally
-- **Windows desktop app** — installs like any Windows program; Steam/Epic-style system tray — library always running in background; open and close the window independently; no browser required
+- **Windows desktop app** — installs like any Windows program; Steam style system tray — library always running in background; open and close the window independently; no browser required
 
 ## Quick Start (Docker)
 
@@ -33,7 +44,7 @@ docker compose up -d --build
 
 ## Quick Start (Windows Desktop)
 
-1. Download the latest `Twine Launcher_x.x.x_x64-setup.exe` from the Releases page
+1. Download the latest `Twine Launcher_x.x.x_x64-setup.exe` from the [Releases page](../../releases)
 2. Run the installer
 3. Launch **Twine Launcher** from the Start Menu
 4. The library starts in the system tray — the window opens automatically once ready (~5 seconds)
@@ -175,43 +186,27 @@ All prefixed with `TWINE_`:
 | `TWINE_ACCESS_TOKEN_EXPIRE_MINUTES` | `60`                                | Access token lifetime (1h); refresh tokens last 30 days |
 | `TWINE_DEBUG`                       | `false`                             | Enable FastAPI debug mode                               |
 
-## Short Term Roadmap
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Roadmap
+
+### Short term
 
 - [ ] Prepare to upload on Winget
-- [ ] Figure out how to deal with providing software updates.
+- [ ] Software update mechanism
 
-## Completed
-
-- [x] Password reset options
-  - [x] Check if these password reset/forget password options are a good idea, or if there are better options available
-  - [x] Players can click "forget password" on login page
-  - [x] Admins can reset passwords for other admins and users, temp password generated shown to the admin (plus easy copy to clipboard button), upon login User is immediately brought to a password change screen before they can continue.
-  - [x] If admin also forget their password, some way to force change password screen to appear when logging in? Modify some config/xml/yaml file on server machine? Assume only admins have access to the server computer? Check for better ideas
-- [x] Add "Allow external access" toggle to windows app settings. Will allow other devices on the network (i.e not localhost) to access the webUI and API.
-- [x] Better settings page
-- [x] User-configurable games directory (native folder picker on first launch; changeable in Settings)
-- [x] Make autosave toggleable in user settings
-- [x] Backend API (auth, games, saves, sessions, backup, themes)
-- [x] React frontend (Library, Login, Setup, Settings, Admin pages)
-- [x] Docker container (multi-stage build)
-- [x] Windows desktop app (Tauri 2 + PyInstaller sidecar, NSIS installer)
-- [x] System tray (minimize to tray, Quit from tray menu)
-- [x] Launch on startup (Windows autostart option in Settings)
-- [x] Make Saving indicator bigger and longer when saving.
-- [x] Manual save button in game view (always-visible ↑ Save button)
-- [x] Back / forward navigation buttons in game view
-- [x] Remember login status (token lifetime extended to 30 days)
-- [x] Backup save restore doesn't work (Game not found warning)
-- [x] Closing window (not quitting from taskbar) doesn't exit game session. Currently reopening app continues at point where window was closed, not at home page.
-- [x] Opening app from Start Menu/shortcut while already running should focus existing window, not launch second instance
-
-## Long Term Roadmap
+### Long term
 
 - [ ] Web-based game sources (add a game by URL; launcher fetches and caches the HTML, injects a `<base href>` so external assets resolve correctly, and serves it same-origin so save sync works unchanged)
-- [ ] Playnite library add-on
 - [ ] Git-based game sources (add games by GitHub/GitLab URL)
+- [ ] Playnite library add-on
 - [ ] Accessible quick settings when inside a game
-- [ ] Per game settings
-- [ ] Windows desktop shortcuts for games (Add to desktop button in context menu for game entry in library).
-- [ ] Make password optional if only 1 user
+- [ ] Per-game settings
+- [ ] Windows desktop shortcuts for individual games
 - [ ] Multiple users playing the same game simultaneously
+
+## License
+
+[MIT](LICENSE)

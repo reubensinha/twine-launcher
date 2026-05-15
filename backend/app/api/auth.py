@@ -141,6 +141,7 @@ def me(current_user: CurrentUser):
 def update_me(payload: UserPrefsUpdate, session: DBSession, current_user: CurrentUser):
     """Update the current user's own preferences (autosave, etc.)."""
     user = session.get(User, current_user.id)
+    assert user is not None
     user.autosave_enabled = payload.autosave_enabled
     session.commit()
     session.refresh(user)
@@ -156,6 +157,7 @@ def change_password(body: ChangePasswordRequest, session: DBSession, current_use
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
     user = session.get(User, current_user.id)
+    assert user is not None
     user.hashed_password = hash_password(body.new_password)
     user.force_password_change = False
     session.commit()

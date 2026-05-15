@@ -14,4 +14,3 @@ services:
       # TWINE_SECRET_KEY: "your-key-here"
       TWINE_DATABASE_URL: "sqlite:////data/twine_launcher.db"
       TWINE_GAMES_DIR: "/games"
-      LOG_LEVEL: "DEBUG"    # Remove after diagnosing save restore issue

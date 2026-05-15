@@ -26,25 +26,35 @@ Self-hosted Twine game library with cross-device save sync, multi-user support, 
 
 ## Quick Start (Docker)
 
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  twine-launcher:
+    image: ghcr.io/reubensinha/twine-launcher:latest
+    container_name: twine-launcher
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    volumes:
+      - ~/twine/games:/games   # Mount your games here
+      - ~/twine/data:/data     # App data is stored here
+    environment:
+      TWINE_DATABASE_URL: "sqlite:////data/twine_launcher.db"
+      TWINE_GAMES_DIR: "/games"
+```
+
+Then:
+
 ```bash
-# 1. Clone the repo
-git clone https://github.com/yourname/twine-launcher
-cd twine-launcher
-
-# 2. Drop your Twine HTML files into games/
-mkdir -p games/my-game
-cp my-game.html games/my-game/index.html
-
-# 3. Build and run
-docker compose up -d --build
-
-# 4. Open http://localhost:8080
-#    First visit triggers the setup wizard to create your admin account.
+docker compose up -d
+# Open http://localhost:8080
+# First visit triggers the setup wizard to create your admin account.
 ```
 
 ## Quick Start (Windows Desktop)
 
-1. Download the latest `Twine Launcher_x.x.x_x64-setup.exe` from the [Releases page](../../releases)
+1. Download the latest `Twine Launcher_x.x.x_x64-setup.exe` from the [Releases page](https://github.com/reubensinha/twine-launcher/releases)
 2. Run the installer
 3. Launch **Twine Launcher** from the Start Menu
 4. The library starts in the system tray — the window opens automatically once ready (~5 seconds)

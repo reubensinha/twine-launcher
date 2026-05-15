@@ -198,13 +198,12 @@ All prefixed with `TWINE_`:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Roadmap
 
 ### Short term
 
-- [ ] Prepare to upload on Winget
 - [ ] Software update mechanism
 
 ### Long term

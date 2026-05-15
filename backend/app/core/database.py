@@ -144,13 +144,13 @@ def _run_alembic_migrations() -> None:
     cfg.set_main_option("script_location", str(alembic_dir))
     cfg.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-    # If this DB has never seen Alembic, stamp at base so all migrations run.
-    # Migrations are idempotent — safe for fresh DBs where create_all already
-    # added the columns, and for old deployments where columns are missing.
-    with engine.connect() as conn:
-        tables = sa_inspect(engine).get_table_names()
-        if "alembic_version" not in tables:
-            command.stamp(cfg, "base")
+    # Fresh DB: create_all already built the full schema, so stamp Alembic at
+    # head and return — running migrations would re-add existing columns.
+    # Existing DB: alembic_version is present, so just upgrade to head.
+    tables = sa_inspect(engine).get_table_names()
+    if "alembic_version" not in tables:
+        command.stamp(cfg, "head")
+        return
 
     command.upgrade(cfg, "head")
 

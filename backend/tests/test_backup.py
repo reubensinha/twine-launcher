@@ -77,9 +77,17 @@ class TestBackupExport:
     def test_export_forbidden_for_player(self, client, patch_engine):
         make_user(patch_engine, "player", "pass", "player")
         token = login(client, "player")
+        # Players may export their own saves; only "full" scope requires admin.
         res = client.post(
             "/api/v1/backup/export",
             json={"scope": "saves-only"},
+            headers=auth_headers(token),
+        )
+        assert res.status_code == 200
+        # Full backup is admin-only.
+        res = client.post(
+            "/api/v1/backup/export",
+            json={"scope": "full"},
             headers=auth_headers(token),
         )
         assert res.status_code == 403

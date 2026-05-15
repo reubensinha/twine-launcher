@@ -34,8 +34,10 @@ export function Button({ variant = 'ghost', size = 'md', loading, children, disa
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> { label?: string; error?: string; }
-export function Input({ label, error, id, style, ...props }: InputProps) {
+export function Input({ label, error, id, style, type, ...props }: InputProps) {
   const [focused, setFocused] = React.useState(false);
+  const [showPw, setShowPw] = React.useState(false);
+  const isPassword = type === 'password';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
       {label && (
@@ -43,16 +45,40 @@ export function Input({ label, error, id, style, ...props }: InputProps) {
           {label}
         </label>
       )}
-      <input id={id} {...props}
-        onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
-        onBlur={(e)  => { setFocused(false); props.onBlur?.(e); }}
-        style={{
-          background: 'var(--surface)', border: `1px solid ${error ? '#c06060' : focused ? 'var(--accent)' : 'var(--border)'}`,
-          borderRadius: 'var(--radius)', color: 'var(--text)', fontFamily: 'var(--font-body)',
-          fontSize: '1rem', padding: '0.5rem 0.75rem', outline: 'none',
-          transition: 'border-color var(--transition)', width: '100%', ...style,
-        }}
-      />
+      <div style={{ position: 'relative' }}>
+        <input id={id} {...props} type={isPassword ? (showPw ? 'text' : 'password') : type}
+          onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
+          onBlur={(e)  => { setFocused(false); props.onBlur?.(e); }}
+          style={{
+            background: 'var(--surface)', border: `1px solid ${error ? '#c06060' : focused ? 'var(--accent)' : 'var(--border)'}`,
+            borderRadius: 'var(--radius)', color: 'var(--text)', fontFamily: 'var(--font-body)',
+            fontSize: '1rem', padding: '0.5rem 0.75rem', paddingRight: isPassword ? '2.25rem' : '0.75rem', outline: 'none',
+            transition: 'border-color var(--transition)', width: '100%', ...style,
+          }}
+        />
+        {isPassword && (
+          <button type="button" tabIndex={-1} onClick={() => setShowPw(v => !v)}
+            style={{
+              position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem',
+              color: 'var(--text-muted)', display: 'flex', alignItems: 'center', lineHeight: 1,
+            }}
+          >
+            {showPw ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+                <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
       {error && <span style={{ fontSize: '0.72rem', color: '#c06060' }}>{error}</span>}
     </div>
   );

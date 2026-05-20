@@ -142,6 +142,15 @@ class SaveResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SaveSummary(BaseModel):
+    game_id: int
+    game_name: str
+    user_id: int
+    username: str
+    data: dict
+    updated_at: datetime
+
+
 # ── Sessions ───────────────────────────────────────────────────────────────────
 
 class SessionResponse(BaseModel):

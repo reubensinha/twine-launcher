@@ -9,12 +9,35 @@ from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
 
-from backend.app.core.database import Game, Save
+from backend.app.core.database import Game, Save, User
 from backend.app.core.dependencies import CurrentUser, DBSession
 from backend.app.core.utils import get_or_404, get_user_save
-from backend.app.schemas import SavePayload, SaveResponse
+from backend.app.schemas import SavePayload, SaveResponse, SaveSummary
 
 router = APIRouter(prefix="/saves", tags=["saves"])
+
+
+@router.get("/", response_model=list[SaveSummary])
+def list_saves(current_user: CurrentUser, session: DBSession):
+    """List saves — admin sees all users', player sees only their own."""
+    q = (
+        session.query(Save, Game.name, User.username)
+        .join(Game, Save.game_id == Game.id)
+        .join(User, Save.user_id == User.id)
+    )
+    if current_user.role != "admin":
+        q = q.filter(Save.user_id == current_user.id)
+    return [
+        SaveSummary(
+            game_id=s.game_id,
+            game_name=game_name,
+            user_id=s.user_id,
+            username=username,
+            data=json.loads(s.data),
+            updated_at=s.updated_at,
+        )
+        for s, game_name, username in q.all()
+    ]
 
 
 @router.get("/{game_id}", response_model=SaveResponse)

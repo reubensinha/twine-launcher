@@ -108,7 +108,7 @@ export const games = {
   delete: (id: number) => request<void>(`/games/${id}`, { method: 'DELETE' }),
   playUrl: (id: number) => `/api/v1/games/${id}/play`,
   startSession: (id: number) =>
-    request<{ session_id: number; game_url: string; game_name: string; initial_saves: Record<string, string> }>(
+    request<{ session_id: number; game_url: string; game_name: string; initial_saves: Record<string, string>; save_updated_at: string | null }>(
       `/games/${id}/session`, { method: 'POST' }
     ),
   upload: (params: { name: string; description?: string; zipFile?: File; folderFiles?: File[]; folderPaths?: string[] }) => {
@@ -130,7 +130,15 @@ export const sessions = {
   close: (id: number) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
 };
 
+export interface SaveSummary {
+  game_id: number; game_name: string;
+  user_id: number; username: string;
+  data: Record<string, string>;
+  updated_at: string;
+}
+
 export const saves = {
+  all: () => request<SaveSummary[]>('/saves/'),
   sync: (gameId: number, data: Record<string, string>) =>
     request<unknown>(`/saves/${gameId}`, { method: 'POST', body: JSON.stringify({ data }) }),
   delete: (gameId: number) => request<void>(`/saves/${gameId}`, { method: 'DELETE' }),

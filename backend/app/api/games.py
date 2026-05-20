@@ -288,6 +288,7 @@ def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
         "game_url": f"/static/games/{game.file_path}",
         "game_name": game.name,
         "initial_saves": initial_saves,
+        "save_updated_at": save_record.updated_at.isoformat() if save_record else None,
     }
 
 

@@ -22,15 +22,43 @@ const overlayBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
   ...extra,
 });
 
+type Phase = 'loading' | 'landing' | 'playing';
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function SaveKeyChips({ data }: { data: Record<string, string> }) {
+  const keys = Object.keys(data);
+  if (keys.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.5rem' }}>
+      {keys.map(k => (
+        <span key={k} style={{
+          fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+          color: 'var(--text-muted)', background: 'var(--surface2)',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          padding: '0.15rem 0.5rem', whiteSpace: 'nowrap',
+        }}>
+          {k} <span style={{ opacity: 0.6 }}>({formatBytes(data[k]?.length ?? 0)})</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const gameId = parseInt(id ?? '0', 10);
   const { user } = useAuthStore();
 
+  const [phase, setPhase] = useState<Phase>('loading');
   const [gameInfo, setGameInfo] = useState<{
     session_id: number; game_url: string; game_name: string;
-    initial_saves: Record<string, string>;
+    initial_saves: Record<string, string>; save_updated_at: string | null;
   } | null>(null);
   const [error, setError] = useState('');
 
@@ -92,7 +120,8 @@ export function GamePage() {
         }
         sessionIdRef.current = info.session_id;
         lastSnapRef.current  = JSON.stringify(Object.fromEntries(saves));
-        setGameInfo(info); // Step 3: triggers game start only after successful injection
+        setGameInfo(info);
+        setPhase('landing'); // Show landing screen; game starts only after user clicks Start
       })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to start game'));
 
@@ -140,12 +169,11 @@ export function GamePage() {
     }
   }, [gameId]);
 
-  // ── Start game + polling (saves already injected in startSession.then) ───────
+  // ── Start game + polling — only fires when user clicks "Start Game" ──────────
   useEffect(() => {
-    if (!gameInfo || !frameRef.current) return;
+    if (phase !== 'playing' || !gameInfo || !frameRef.current) return;
     const frame = frameRef.current;
 
-    // Show badge only when saves were actually injected (lastSnapRef reflects injected state)
     if (lastSnapRef.current !== '{}') {
       setSyncState('restored');
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -157,7 +185,7 @@ export function GamePage() {
       ? setInterval(() => syncSaves(), POLL_MS)
       : null;
     return () => { if (interval !== null) clearInterval(interval); };
-  }, [gameInfo, syncSaves]);
+  }, [phase, gameInfo, syncSaves]);
 
   // ── In-game navigation ──────────────────────────────────────────────────────
   const goBack    = () => frameRef.current?.contentWindow?.history.back();
@@ -169,7 +197,16 @@ export function GamePage() {
     const info = pendingInfoRef.current;
     pendingInfoRef.current = null;
     setRestoreError(null);
-    if (info) setGameInfo(info); // triggers gameInfo useEffect → starts game
+    if (info) { setGameInfo(info); setPhase('playing'); }
+  }, []);
+
+  // ── Clear saves and launch from landing screen ───────────────────────────────
+  const clearAndPlay = useCallback(() => {
+    const jwt = localStorage.getItem('twine_access_token');
+    localStorage.clear();
+    if (jwt) localStorage.setItem('twine_access_token', jwt);
+    lastSnapRef.current = '{}';
+    setPhase('playing');
   }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -221,10 +258,93 @@ export function GamePage() {
     );
   }
 
-  if (!gameInfo) {
+  if (phase === 'loading') {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
         <Spinner size={28} color="var(--text-muted)" />
+      </div>
+    );
+  }
+
+  if (phase === 'landing' && gameInfo) {
+    const hasSaves = Object.keys(gameInfo.initial_saves).length > 0;
+    return (
+      <div style={{
+        height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)', gap: '2rem', padding: '2rem',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+            Ready to play
+          </p>
+          <h1 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontWeight: 400, fontSize: '2rem', color: 'var(--text)', margin: 0 }}>
+            {gameInfo.game_name}
+          </h1>
+        </div>
+
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)', padding: '1.25rem 1.75rem',
+          width: '100%', maxWidth: 480,
+        }}>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 0.5rem' }}>
+            Save data
+          </p>
+          {hasSaves ? (
+            <>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.82rem', color: 'var(--text)', margin: '0 0 0.5rem' }}>
+                Last saved: {gameInfo.save_updated_at
+                  ? new Date(gameInfo.save_updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+                  : '—'}
+              </p>
+              <SaveKeyChips data={gameInfo.initial_saves} />
+            </>
+          ) : (
+            <p style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>
+              No previous save — starting fresh.
+            </p>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button
+            onClick={() => setPhase('playing')}
+            style={{
+              fontFamily: 'var(--font-ui)', fontSize: '0.85rem', fontWeight: 500,
+              background: 'var(--accent)', color: 'var(--accent-text)',
+              border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+              padding: '0.55rem 1.75rem', cursor: 'pointer',
+              transition: 'opacity var(--transition)',
+            }}
+          >
+            Start Game
+          </button>
+          {hasSaves && (
+            <button
+              onClick={clearAndPlay}
+              style={{
+                fontFamily: 'var(--font-ui)', fontSize: '0.8rem',
+                background: 'transparent', color: 'var(--text-muted)',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                padding: '0.5rem 1.2rem', cursor: 'pointer',
+                transition: 'all var(--transition)',
+              }}
+            >
+              Play fresh
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              fontFamily: 'var(--font-ui)', fontSize: '0.8rem',
+              background: 'transparent', color: 'var(--text-muted)',
+              border: 'none', padding: '0.5rem 0.5rem', cursor: 'pointer',
+            }}
+          >
+            ← Back
+          </button>
+        </div>
       </div>
     );
   }
@@ -234,7 +354,7 @@ export function GamePage() {
       <iframe
         ref={frameRef}
         src="about:blank"
-        title={gameInfo.game_name}
+        title={gameInfo?.game_name ?? ''}
         sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
       />

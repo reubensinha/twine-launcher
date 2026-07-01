@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { saves as savesApi, SaveSummary } from '../api';
+import { saves as savesApi, SaveSummary, StorageSnapshot } from '../api';
 import { useAuthStore } from '../store/auth';
 import { Spinner } from '../components/ui';
 
@@ -9,23 +9,34 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function SaveKeyChips({ data }: { data: Record<string, string> }) {
-  const keys = Object.keys(data);
-  if (keys.length === 0) {
+const chipStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+  color: 'var(--text-muted)', background: 'var(--surface2)',
+  border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+  padding: '0.15rem 0.5rem', whiteSpace: 'nowrap',
+};
+
+function SaveKeyChips({ data }: { data: StorageSnapshot }) {
+  const lsKeys = Object.keys(data.localStorage ?? {});
+  const idbEntries = Object.entries(data.indexedDB ?? {});
+  if (lsKeys.length === 0 && idbEntries.length === 0) {
     return <span style={{ fontFamily: 'var(--font-ui)', fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No save data</span>;
   }
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-      {keys.map(k => (
-        <span key={k} style={{
-          fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
-          color: 'var(--text-muted)', background: 'var(--surface2)',
-          border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-          padding: '0.15rem 0.5rem', whiteSpace: 'nowrap',
-        }}>
-          {k} <span style={{ opacity: 0.6 }}>({formatBytes(data[k]?.length ?? 0)})</span>
+      {lsKeys.map(k => (
+        <span key={`ls-${k}`} style={chipStyle}>
+          {k} <span style={{ opacity: 0.6 }}>({formatBytes(data.localStorage[k]?.length ?? 0)})</span>
         </span>
       ))}
+      {idbEntries.map(([dbName, db]) => {
+        const records = Object.values(db.stores ?? {}).reduce((n, s) => n + (s.records?.length ?? 0), 0);
+        return (
+          <span key={`idb-${dbName}`} style={{ ...chipStyle, color: 'var(--accent, var(--text-muted))' }}>
+            IndexedDB: {dbName} <span style={{ opacity: 0.6 }}>({records} {records === 1 ? 'record' : 'records'})</span>
+          </span>
+        );
+      })}
     </div>
   );
 }

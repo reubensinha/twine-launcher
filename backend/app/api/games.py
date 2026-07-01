@@ -266,30 +266,81 @@ def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
     db_session = _create_game_session(session, game_id, current_user, game.name)
 
     save_record = get_user_save(session, game_id, current_user.id)
-    initial_saves = json.loads(save_record.data) if save_record else {}
+    stored = json.loads(save_record.data) if save_record else {}
+    # Always hand back the nested shape so the React player can rely on it.
+    initial_saves = {
+        "localStorage": stored.get("localStorage", {}),
+        "indexedDB": stored.get("indexedDB", {}),
+    }
 
     logger.info(
-        "session_start game_id=%d user=%s session_id=%d save_record_found=%s save_key_count=%d save_keys=%s",
+        "session_start game_id=%d user=%s session_id=%d save_found=%s ls_keys=%d idb_dbs=%s",
         game_id,
         current_user.username,
         db_session.id,
         save_record is not None,
-        len(initial_saves),
-        sorted(initial_saves.keys()),
+        len(initial_saves["localStorage"]),
+        sorted(initial_saves["indexedDB"].keys()),
     )
-    for k, v in initial_saves.items():
-        logger.debug(
-            "session_start_save_value game_id=%d key=%r value_len=%d value_preview=%r",
-            game_id, k, len(str(v)), str(v)[:200],
-        )
 
     return {
         "session_id": db_session.id,
-        "game_url": f"/static/games/{game.file_path}",
+        # The game is served through the injecting /frame route (adds <base href>
+        # + an IndexedDB tracker) rather than the raw static mount.
+        "game_url": f"/api/v1/games/{game_id}/frame",
         "game_name": game.name,
         "initial_saves": initial_saves,
         "save_updated_at": save_record.updated_at.isoformat() if save_record else None,
     }
+
+
+# Injected into every served game's <head>. Wraps indexedDB.open so the parent
+# React player learns which IndexedDB databases the game touches — needed because
+# Firefox does not implement indexedDB.databases() for enumeration.
+_IDB_TRACKER_JS = (
+    "(function(){try{var f=window.indexedDB;if(!f||!f.open)return;"
+    "var orig=f.open;f.open=function(name){"
+    "try{window.parent.postMessage({__twineIdb:'open',name:name},'*');}catch(e){}"
+    "return orig.apply(f,arguments);};}catch(e){}})();"
+)
+
+
+@router.get("/{game_id}/frame", response_class=HTMLResponse)
+def frame_game(game_id: int, session: DBSession):
+    """
+    Serve a game's entry HTML for embedding in the player iframe.
+
+    Injects into <head>:
+      - <base href> so the game's relative asset URLs resolve against its own
+        static directory (the document itself is served from this API route).
+      - a tiny script that reports opened IndexedDB database names to the parent.
+
+    Unauthenticated, matching the public /static/games mount it reads from.
+    Session creation/eligibility is handled separately by POST /{id}/session.
+    """
+    game = get_or_404(session, Game, game_id, "Game")
+
+    settings = get_settings()
+    entry = Path(settings.games_dir) / game.file_path
+    if not entry.is_file():
+        raise HTTPException(status_code=404, detail="Game file not found on disk")
+
+    html = entry.read_text(encoding="utf-8", errors="replace")
+
+    # Base href = the directory containing the entry file, served via the static mount.
+    base_dir = game.file_path.replace("\\", "/").rsplit("/", 1)[0] if "/" in game.file_path else ""
+    base_href = f"/static/games/{base_dir}/" if base_dir else "/static/games/"
+
+    injection = f'<base href="{base_href}">\n<script>{_IDB_TRACKER_JS}</script>\n'
+
+    head_match = re.search(r"<head[^>]*>", html, re.IGNORECASE)
+    if head_match:
+        idx = head_match.end()
+        html = html[:idx] + "\n" + injection + html[idx:]
+    else:
+        html = injection + html
+
+    return HTMLResponse(content=html)
 
 
 @router.get("/{game_id}/play", response_class=HTMLResponse)

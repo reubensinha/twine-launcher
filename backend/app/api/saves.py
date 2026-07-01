@@ -60,18 +60,26 @@ def get_saves(game_id: int, session: DBSession, current_user: CurrentUser):
 @router.post("/{game_id}", response_model=SaveResponse)
 def upsert_saves(game_id: int, payload: SavePayload, session: DBSession, current_user: CurrentUser):
     """
-    Upsert this user's localStorage snapshot for a game.
-    Called by the iframe wrapper's polling script on every detected change.
+    Upsert this user's storage snapshot for a game.
+
+    The payload is a nested blob of the game's browser storage:
+        { "localStorage": { key: value, ... },
+          "indexedDB":    { dbName: { version, stores: { ... } }, ... } }
+
+    Called by the React player's polling loop on every detected change.
     """
     get_or_404(session, Game, game_id, "Game")
 
     record = get_user_save(session, game_id, current_user.id)
+    local_store = payload.data.get("localStorage", {})
+    idb_store = payload.data.get("indexedDB", {})
     logger.info(
-        "save_sync game_id=%d user_id=%d key_count=%d keys=%s",
+        "save_sync game_id=%d user_id=%d ls_keys=%d idb_dbs=%s idb_bytes=%d",
         game_id,
         current_user.id,
-        len(payload.data),
-        sorted(payload.data.keys()),
+        len(local_store),
+        sorted(idb_store.keys()),
+        len(json.dumps(idb_store)),
     )
 
     serialized = json.dumps(payload.data)

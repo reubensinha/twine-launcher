@@ -3,8 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { games as gamesApi, saves as savesApi, getToken } from '../api';
 import { useAuthStore } from '../store/auth';
 import { Spinner } from '../components/ui';
+import {
+  dumpIndexedDB, restoreIndexedDB, deleteIndexedDB, discoverDbNames, IdbDump,
+} from '../lib/idb-sync';
 
 const POLL_MS = 3000;
+
+// Nested storage snapshot synced to/from the server.
+type InitialSaves = { localStorage: Record<string, string>; indexedDB: IdbDump };
 
 // Shared style for the overlay control buttons
 const overlayBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
@@ -58,7 +64,7 @@ export function GamePage() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [gameInfo, setGameInfo] = useState<{
     session_id: number; game_url: string; game_name: string;
-    initial_saves: Record<string, string>; save_updated_at: string | null;
+    initial_saves: InitialSaves; save_updated_at: string | null;
   } | null>(null);
   const [error, setError] = useState('');
 
@@ -67,6 +73,12 @@ export function GamePage() {
   const lastSnapRef   = useRef<string>('{}');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncingRef  = useRef(false);
+  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  // IndexedDB database names the game has opened (reported by the injected tracker) —
+  // unions with indexedDB.databases() so capture works on Firefox too.
+  const trackedDbNamesRef = useRef<Set<string>>(new Set());
+  // Whether to restore the server's IndexedDB snapshot on launch (false for "play fresh").
+  const restoreIdbRef = useRef<boolean>(true);
   // Holds session info when injection fails so startNewGame can still launch the game
   const pendingInfoRef = useRef<typeof gameInfo>(null);
   // Captures autosave preference at game-start; ref avoids re-triggering the gameInfo effect
@@ -74,6 +86,18 @@ export function GamePage() {
   autosaveEnabledRef.current = user?.autosave_enabled ?? true;
   const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'restored' | 'error'>('');
   const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // ── Track IndexedDB databases the game opens (from the injected /frame tracker) ─
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data;
+      if (d && d.__twineIdb === 'open' && typeof d.name === 'string') {
+        trackedDbNamesRef.current.add(d.name);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   // ── Delete session on full page unload (window close) ──────────────────────
   useEffect(() => {
@@ -99,8 +123,9 @@ export function GamePage() {
   useEffect(() => {
     gamesApi.startSession(gameId)
       .then(info => {
-        // Step 2: inject saves synchronously — game must not start if this fails
-        const saves = Object.entries(info.initial_saves)
+        // Step 2: inject localStorage saves synchronously — game must not start if this fails.
+        // (IndexedDB is restored later, just before the iframe navigates — see the play effect.)
+        const saves = Object.entries(info.initial_saves.localStorage)
           .filter(([k]) => k !== 'twine_access_token');
         // Evict stale saves from previous sessions — localStorage is a working
         // buffer; the server holds the authoritative copy.
@@ -119,7 +144,12 @@ export function GamePage() {
           }
         }
         sessionIdRef.current = info.session_id;
-        lastSnapRef.current  = JSON.stringify(Object.fromEntries(saves));
+        // Baseline snapshot in the same nested shape syncSaves produces, so the first
+        // poll doesn't redundantly re-POST what we just restored.
+        lastSnapRef.current = JSON.stringify({
+          localStorage: Object.fromEntries(saves),
+          indexedDB: info.initial_saves.indexedDB,
+        });
         setGameInfo(info);
         setPhase('landing'); // Show landing screen; game starts only after user clicks Start
       })
@@ -146,18 +176,23 @@ export function GamePage() {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     try {
-      // Read from parent window.localStorage — same bucket as the game iframe (same origin).
-      // Avoids SecurityError from crossing the iframe boundary via contentWindow.
-      const snap: Record<string, string> = {};
+      // localStorage: read from the parent window — same bucket as the game iframe
+      // (same origin). Avoids a SecurityError from crossing the iframe via contentWindow.
+      const local: Record<string, string> = {};
       for (let i = 0; i < window.localStorage.length; i++) {
         const k = window.localStorage.key(i)!;
         if (k === 'twine_access_token') continue;
-        snap[k] = window.localStorage.getItem(k)!;
+        local[k] = window.localStorage.getItem(k)!;
       }
-      const serialized = JSON.stringify(snap);
+      // IndexedDB: dump every DB we know about (enumerated + tracker-reported).
+      const dbNames = await discoverDbNames(trackedDbNamesRef.current);
+      const indexedDB = await dumpIndexedDB(dbNames);
+
+      const snapshot: InitialSaves = { localStorage: local, indexedDB };
+      const serialized = JSON.stringify(snapshot);
       if (!force && serialized === lastSnapRef.current) return;
       setSyncState('syncing');
-      await savesApi.sync(gameId, snap);
+      await savesApi.sync(gameId, snapshot);
       lastSnapRef.current = serialized;
       setSyncState('saved');
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -173,18 +208,46 @@ export function GamePage() {
   useEffect(() => {
     if (phase !== 'playing' || !gameInfo || !frameRef.current) return;
     const frame = frameRef.current;
+    let cancelled = false;
 
-    if (lastSnapRef.current !== '{}') {
-      setSyncState('restored');
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'restored' ? '' : s), 2500);
-    }
+    (async () => {
+      // Restore the server's IndexedDB snapshot into the shared same-origin store
+      // BEFORE the game boots, so the game opens an already-populated database.
+      // Skipped for "play fresh".
+      if (restoreIdbRef.current) {
+        try {
+          await restoreIndexedDB(gameInfo.initial_saves.indexedDB);
+        } catch (e) {
+          console.error('[idb-sync] IndexedDB restore failed', e);
+        }
+        // Seed tracked names so the first capture can dump them even on Firefox.
+        for (const n of Object.keys(gameInfo.initial_saves.indexedDB)) {
+          trackedDbNamesRef.current.add(n);
+        }
+      }
+      if (cancelled || !frameRef.current) return;
 
-    frame.src = gameInfo.game_url;
-    const interval = autosaveEnabledRef.current
-      ? setInterval(() => syncSaves(), POLL_MS)
-      : null;
-    return () => { if (interval !== null) clearInterval(interval); };
+      const hadSaves =
+        Object.keys(gameInfo.initial_saves.localStorage).length > 0 ||
+        Object.keys(gameInfo.initial_saves.indexedDB).length > 0;
+      if (restoreIdbRef.current && hadSaves) {
+        setSyncState('restored');
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'restored' ? '' : s), 2500);
+      }
+
+      frame.src = gameInfo.game_url;
+      // Start polling only after restore + launch, so a mid-restore snapshot can't
+      // overwrite the server copy with partial data.
+      if (autosaveEnabledRef.current) {
+        intervalRef.current = setInterval(() => syncSaves(), POLL_MS);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (intervalRef.current !== null) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    };
   }, [phase, gameInfo, syncSaves]);
 
   // ── In-game navigation ──────────────────────────────────────────────────────
@@ -193,6 +256,7 @@ export function GamePage() {
 
   // ── Start fresh when save injection failed ──────────────────────────────────
   const startNewGame = useCallback(() => {
+    restoreIdbRef.current = false; // don't restore IndexedDB over a fresh start
     lastSnapRef.current = '{}';
     const info = pendingInfoRef.current;
     pendingInfoRef.current = null;
@@ -201,13 +265,16 @@ export function GamePage() {
   }, []);
 
   // ── Clear saves and launch from landing screen ───────────────────────────────
-  const clearAndPlay = useCallback(() => {
+  const clearAndPlay = useCallback(async () => {
     const jwt = localStorage.getItem('twine_access_token');
     localStorage.clear();
     if (jwt) localStorage.setItem('twine_access_token', jwt);
+    // Wipe the game's known IndexedDB databases so "play fresh" is genuinely fresh.
+    if (gameInfo) await deleteIndexedDB(Object.keys(gameInfo.initial_saves.indexedDB));
+    restoreIdbRef.current = false;
     lastSnapRef.current = '{}';
     setPhase('playing');
-  }, []);
+  }, [gameInfo]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (error) {
@@ -267,7 +334,9 @@ export function GamePage() {
   }
 
   if (phase === 'landing' && gameInfo) {
-    const hasSaves = Object.keys(gameInfo.initial_saves).length > 0;
+    const lsKeys = Object.keys(gameInfo.initial_saves.localStorage);
+    const idbDbs = Object.keys(gameInfo.initial_saves.indexedDB);
+    const hasSaves = lsKeys.length > 0 || idbDbs.length > 0;
     return (
       <div style={{
         height: '100%', display: 'flex', flexDirection: 'column',
@@ -298,7 +367,12 @@ export function GamePage() {
                   ? new Date(gameInfo.save_updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
                   : '—'}
               </p>
-              <SaveKeyChips data={gameInfo.initial_saves} />
+              <SaveKeyChips data={gameInfo.initial_saves.localStorage} />
+              {idbDbs.length > 0 && (
+                <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  IndexedDB: {idbDbs.join(', ')}
+                </p>
+              )}
             </>
           ) : (
             <p style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>

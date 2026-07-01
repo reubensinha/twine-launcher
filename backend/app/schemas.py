@@ -129,7 +129,12 @@ class GameResponse(BaseModel):
 # ── Saves ──────────────────────────────────────────────────────────────────────
 
 class SavePayload(BaseModel):
-    """localStorage snapshot posted from the game wrapper."""
+    """
+    Browser-storage snapshot posted from the React player.
+
+    Shape: { "localStorage": { key: value, ... },
+             "indexedDB":    { dbName: { version, stores: { ... } }, ... } }
+    """
     data: dict
 
 

@@ -35,7 +35,7 @@ services:
     container_name: twine-launcher
     restart: unless-stopped
     ports:
-      - "8080:8000"
+      - "8090:8000"
     volumes:
       - ~/twine/games:/games   # Mount your games here
       - ~/twine/data:/data     # App data is stored here
@@ -48,7 +48,7 @@ Then:
 
 ```bash
 docker compose up -d
-# Open http://localhost:8080
+# Open http://localhost:8090
 # First visit triggers the setup wizard to create your admin account.
 ```
 

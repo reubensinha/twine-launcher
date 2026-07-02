@@ -21,7 +21,7 @@ from backend.app.core.database import Game, GameSession
 from backend.app.core.dependencies import AdminUser, CurrentUser, DBSession
 from backend.app.core.session_registry import registry
 from backend.app.core.utils import get_or_404, get_user_save
-from backend.app.schemas import GameCreate, GameResponse, GameUpdate
+from backend.app.schemas import GameCreate, GameResponse, GameUpdate, utc_isoformat
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -290,7 +290,7 @@ def start_session(game_id: int, session: DBSession, current_user: CurrentUser):
         "game_url": f"/api/v1/games/{game_id}/frame",
         "game_name": game.name,
         "initial_saves": initial_saves,
-        "save_updated_at": save_record.updated_at.isoformat() if save_record else None,
+        "save_updated_at": utc_isoformat(save_record.updated_at) if save_record else None,
     }
 
 

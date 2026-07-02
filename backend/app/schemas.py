@@ -2,9 +2,26 @@
 Pydantic 2 request/response schemas for all API endpoints.
 """
 
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, field_validator
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+from pydantic import BaseModel, PlainSerializer, field_validator
+
+
+def utc_isoformat(dt: datetime) -> str:
+    """Serialize a datetime as a UTC ISO-8601 string with an explicit offset.
+
+    Timestamps are stored as UTC, but SQLite returns them naive (no tzinfo).
+    Without an explicit offset the browser's `new Date(...)` parses them as
+    local time, shifting displayed times. Treat naive datetimes as UTC and
+    emit an explicit +00:00 offset so clients convert correctly.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+# datetime response fields that must always serialize as explicit UTC.
+UtcDatetime = Annotated[datetime, PlainSerializer(utc_isoformat, return_type=str)]
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -80,7 +97,7 @@ class UserResponse(BaseModel):
     theme: Optional[str] = None
     autosave_enabled: bool = True
     force_password_change: bool = False
-    created_at: datetime
+    created_at: UtcDatetime
 
     model_config = {"from_attributes": True}
 
@@ -121,7 +138,7 @@ class GameResponse(BaseModel):
     cover_image: Optional[str]
     source: str
     source_url: Optional[str]
-    created_at: datetime
+    created_at: UtcDatetime
 
     model_config = {"from_attributes": True}
 
@@ -142,7 +159,7 @@ class SaveResponse(BaseModel):
     game_id: int
     user_id: int
     data: dict
-    updated_at: datetime
+    updated_at: UtcDatetime
 
     model_config = {"from_attributes": True}
 
@@ -153,7 +170,7 @@ class SaveSummary(BaseModel):
     user_id: int
     username: str
     data: dict
-    updated_at: datetime
+    updated_at: UtcDatetime
 
 
 # ── Sessions ───────────────────────────────────────────────────────────────────
@@ -165,7 +182,7 @@ class SessionResponse(BaseModel):
     game_name: str
     user_id: int
     username: str
-    started_at: datetime
+    started_at: UtcDatetime
 
     model_config = {"from_attributes": True}
 

@@ -14,8 +14,15 @@ import type {
   UserCreate,
   UserUpdate,
 } from '../types';
+import type { IdbDump } from '../lib/idb-sync';
 
 const BASE = '/api/v1';
+
+/** Nested browser-storage snapshot synced to/from the server. */
+export interface StorageSnapshot {
+  localStorage: Record<string, string>;
+  indexedDB: IdbDump;
+}
 
 export function getToken(): string | null { return localStorage.getItem('twine_access_token'); }
 export function setToken(t: string): void  { localStorage.setItem('twine_access_token', t); }
@@ -108,7 +115,7 @@ export const games = {
   delete: (id: number) => request<void>(`/games/${id}`, { method: 'DELETE' }),
   playUrl: (id: number) => `/api/v1/games/${id}/play`,
   startSession: (id: number) =>
-    request<{ session_id: number; game_url: string; game_name: string; initial_saves: Record<string, string> }>(
+    request<{ session_id: number; game_url: string; game_name: string; initial_saves: StorageSnapshot; save_updated_at: string | null }>(
       `/games/${id}/session`, { method: 'POST' }
     ),
   upload: (params: { name: string; description?: string; zipFile?: File; folderFiles?: File[]; folderPaths?: string[] }) => {
@@ -130,8 +137,16 @@ export const sessions = {
   close: (id: number) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
 };
 
+export interface SaveSummary {
+  game_id: number; game_name: string;
+  user_id: number; username: string;
+  data: StorageSnapshot;
+  updated_at: string;
+}
+
 export const saves = {
-  sync: (gameId: number, data: Record<string, string>) =>
+  all: () => request<SaveSummary[]>('/saves/'),
+  sync: (gameId: number, data: StorageSnapshot) =>
     request<unknown>(`/saves/${gameId}`, { method: 'POST', body: JSON.stringify({ data }) }),
   delete: (gameId: number) => request<void>(`/saves/${gameId}`, { method: 'DELETE' }),
 };

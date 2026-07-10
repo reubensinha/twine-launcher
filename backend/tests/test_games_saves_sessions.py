@@ -234,9 +234,13 @@ class TestSaveRestoreFlow:
         token = login(client, "admin")
         game = create_game(client, token)
 
+        save_data = {
+            "localStorage": {"slot1": "chapter2", "history": "a,b,c"},
+            "indexedDB": {},
+        }
         client.post(
             f"/api/v1/saves/{game['id']}",
-            json={"data": {"slot1": "chapter2", "history": "a,b,c"}},
+            json={"data": save_data},
             headers=auth_headers(token),
         )
 
@@ -246,10 +250,10 @@ class TestSaveRestoreFlow:
         assert isinstance(data["initial_saves"], dict), (
             f"initial_saves must be a dict, got {type(data['initial_saves'])}: {data['initial_saves']!r}"
         )
-        assert data["initial_saves"] == {"slot1": "chapter2", "history": "a,b,c"}
+        assert data["initial_saves"] == save_data
 
-    def test_start_session_no_saves_returns_empty_dict(self, client, patch_engine):
-        """When no saves exist yet, initial_saves must be an empty dict, not null."""
+    def test_start_session_no_saves_returns_empty_shape(self, client, patch_engine):
+        """When no saves exist yet, initial_saves must be the empty nested shape, not null."""
         make_user(patch_engine, "admin", "pass", "admin")
         token = login(client, "admin")
         game = create_game(client, token)
@@ -257,14 +261,15 @@ class TestSaveRestoreFlow:
         res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(token))
         assert res.status_code == 201
         data = res.json()
-        assert data["initial_saves"] == {}
+        assert data["initial_saves"] == {"localStorage": {}, "indexedDB": {}}
         assert isinstance(data["initial_saves"], dict)
 
     def test_cross_device_save_restore(self, client, patch_engine):
         """Simulate Device A saving, closing session, Device B launching.
 
-        The save data written by Device A must appear in initial_saves when
-        Device B (or the same user on a fresh session) calls start_session.
+        The save data written by Device A — including IndexedDB — must appear in
+        initial_saves when Device B (or the same user on a fresh session) calls
+        start_session.
         """
         make_user(patch_engine, "admin", "pass", "admin")
         token = login(client, "admin")
@@ -275,8 +280,23 @@ class TestSaveRestoreFlow:
         assert s1.status_code == 201
         session_id = s1.json()["session_id"]
 
-        # Device A: game progress is synced to the server
-        save_data = {"slot1": "checkpoint_2", "visited": "room1,room2,room3"}
+        # Device A: game progress is synced to the server (localStorage + IndexedDB)
+        save_data = {
+            "localStorage": {"settings": "v1"},
+            "indexedDB": {
+                "saves.db": {
+                    "version": 1,
+                    "stores": {
+                        "saves": {
+                            "keyPath": None,
+                            "autoIncrement": False,
+                            "indexes": [],
+                            "records": [{"key": 1, "value": "checkpoint_2"}],
+                        }
+                    },
+                }
+            },
+        }
         client.post(
             f"/api/v1/saves/{game['id']}",
             json={"data": save_data},
@@ -330,7 +350,46 @@ class TestSaveRestoreFlow:
             headers=auth_headers(admin_token),
         )
 
-        # Player starts a session — must get an empty dict, not admin's saves
+        # Player starts a session — must get the empty nested shape, not admin's saves
         res = client.post(f"/api/v1/games/{game['id']}/session", headers=auth_headers(player_token))
         assert res.status_code == 201
-        assert res.json()["initial_saves"] == {}
+        assert res.json()["initial_saves"] == {"localStorage": {}, "indexedDB": {}}
+
+
+# ── Game frame (injected loader) ─────────────────────────────────────────────────
+
+class TestGameFrame:
+    """The /frame route serves game HTML with a <base href> and IndexedDB tracker."""
+
+    def _write_game_file(self, rel_path: str, html: str) -> None:
+        import os
+        games_dir = os.environ["TWINE_GAMES_DIR"]
+        dest = os.path.join(games_dir, rel_path)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(html)
+
+    def test_frame_injects_base_and_tracker(self, client, patch_engine):
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token, file_path="test/index.html")
+        self._write_game_file(
+            "test/index.html",
+            "<!DOCTYPE html><html><head><title>Game</title></head><body>hi</body></html>",
+        )
+
+        # Served unauthenticated, like the static mount it reads from.
+        res = client.get(f"/api/v1/games/{game['id']}/frame")
+        assert res.status_code == 200
+        body = res.text
+        assert '<base href="/static/games/test/">' in body
+        assert "__twineIdb" in body          # IndexedDB tracker injected
+        assert "indexedDB.open" not in body or "f.open" in body  # tracker references open()
+        assert "hi" in body                   # original game content preserved
+
+    def test_frame_missing_file_returns_404(self, client, patch_engine):
+        make_user(patch_engine, "admin", "pass", "admin")
+        token = login(client, "admin")
+        game = create_game(client, token, file_path="absent/index.html")
+        res = client.get(f"/api/v1/games/{game['id']}/frame")
+        assert res.status_code == 404

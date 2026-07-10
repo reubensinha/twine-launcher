@@ -3,8 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { games as gamesApi, saves as savesApi, getToken } from '../api';
 import { useAuthStore } from '../store/auth';
 import { Spinner } from '../components/ui';
+import {
+  dumpIndexedDB, restoreIndexedDB, deleteIndexedDB, discoverDbNames, IdbDump,
+} from '../lib/idb-sync';
 
 const POLL_MS = 3000;
+
+// Nested storage snapshot synced to/from the server.
+type InitialSaves = { localStorage: Record<string, string>; indexedDB: IdbDump };
 
 // Shared style for the overlay control buttons
 const overlayBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
@@ -22,15 +28,43 @@ const overlayBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
   ...extra,
 });
 
+type Phase = 'loading' | 'landing' | 'playing';
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function SaveKeyChips({ data }: { data: Record<string, string> }) {
+  const keys = Object.keys(data);
+  if (keys.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.5rem' }}>
+      {keys.map(k => (
+        <span key={k} style={{
+          fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+          color: 'var(--text-muted)', background: 'var(--surface2)',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          padding: '0.15rem 0.5rem', whiteSpace: 'nowrap',
+        }}>
+          {k} <span style={{ opacity: 0.6 }}>({formatBytes(data[k]?.length ?? 0)})</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function GamePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const gameId = parseInt(id ?? '0', 10);
   const { user } = useAuthStore();
 
+  const [phase, setPhase] = useState<Phase>('loading');
   const [gameInfo, setGameInfo] = useState<{
     session_id: number; game_url: string; game_name: string;
-    initial_saves: Record<string, string>;
+    initial_saves: InitialSaves; save_updated_at: string | null;
   } | null>(null);
   const [error, setError] = useState('');
 
@@ -39,6 +73,12 @@ export function GamePage() {
   const lastSnapRef   = useRef<string>('{}');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncingRef  = useRef(false);
+  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  // IndexedDB database names the game has opened (reported by the injected tracker) —
+  // unions with indexedDB.databases() so capture works on Firefox too.
+  const trackedDbNamesRef = useRef<Set<string>>(new Set());
+  // Whether to restore the server's IndexedDB snapshot on launch (false for "play fresh").
+  const restoreIdbRef = useRef<boolean>(true);
   // Holds session info when injection fails so startNewGame can still launch the game
   const pendingInfoRef = useRef<typeof gameInfo>(null);
   // Captures autosave preference at game-start; ref avoids re-triggering the gameInfo effect
@@ -46,6 +86,18 @@ export function GamePage() {
   autosaveEnabledRef.current = user?.autosave_enabled ?? true;
   const [syncState, setSyncState] = useState<'' | 'syncing' | 'saved' | 'restored' | 'error'>('');
   const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // ── Track IndexedDB databases the game opens (from the injected /frame tracker) ─
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data;
+      if (d && d.__twineIdb === 'open' && typeof d.name === 'string') {
+        trackedDbNamesRef.current.add(d.name);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   // ── Delete session on full page unload (window close) ──────────────────────
   useEffect(() => {
@@ -71,8 +123,9 @@ export function GamePage() {
   useEffect(() => {
     gamesApi.startSession(gameId)
       .then(info => {
-        // Step 2: inject saves synchronously — game must not start if this fails
-        const saves = Object.entries(info.initial_saves)
+        // Step 2: inject localStorage saves synchronously — game must not start if this fails.
+        // (IndexedDB is restored later, just before the iframe navigates — see the play effect.)
+        const saves = Object.entries(info.initial_saves.localStorage)
           .filter(([k]) => k !== 'twine_access_token');
         // Evict stale saves from previous sessions — localStorage is a working
         // buffer; the server holds the authoritative copy.
@@ -91,8 +144,14 @@ export function GamePage() {
           }
         }
         sessionIdRef.current = info.session_id;
-        lastSnapRef.current  = JSON.stringify(Object.fromEntries(saves));
-        setGameInfo(info); // Step 3: triggers game start only after successful injection
+        // Baseline snapshot in the same nested shape syncSaves produces, so the first
+        // poll doesn't redundantly re-POST what we just restored.
+        lastSnapRef.current = JSON.stringify({
+          localStorage: Object.fromEntries(saves),
+          indexedDB: info.initial_saves.indexedDB,
+        });
+        setGameInfo(info);
+        setPhase('landing'); // Show landing screen; game starts only after user clicks Start
       })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to start game'));
 
@@ -117,18 +176,23 @@ export function GamePage() {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     try {
-      // Read from parent window.localStorage — same bucket as the game iframe (same origin).
-      // Avoids SecurityError from crossing the iframe boundary via contentWindow.
-      const snap: Record<string, string> = {};
+      // localStorage: read from the parent window — same bucket as the game iframe
+      // (same origin). Avoids a SecurityError from crossing the iframe via contentWindow.
+      const local: Record<string, string> = {};
       for (let i = 0; i < window.localStorage.length; i++) {
         const k = window.localStorage.key(i)!;
         if (k === 'twine_access_token') continue;
-        snap[k] = window.localStorage.getItem(k)!;
+        local[k] = window.localStorage.getItem(k)!;
       }
-      const serialized = JSON.stringify(snap);
+      // IndexedDB: dump every DB we know about (enumerated + tracker-reported).
+      const dbNames = await discoverDbNames(trackedDbNamesRef.current);
+      const indexedDB = await dumpIndexedDB(dbNames);
+
+      const snapshot: InitialSaves = { localStorage: local, indexedDB };
+      const serialized = JSON.stringify(snapshot);
       if (!force && serialized === lastSnapRef.current) return;
       setSyncState('syncing');
-      await savesApi.sync(gameId, snap);
+      await savesApi.sync(gameId, snapshot);
       lastSnapRef.current = serialized;
       setSyncState('saved');
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
@@ -140,24 +204,51 @@ export function GamePage() {
     }
   }, [gameId]);
 
-  // ── Start game + polling (saves already injected in startSession.then) ───────
+  // ── Start game + polling — only fires when user clicks "Start Game" ──────────
   useEffect(() => {
-    if (!gameInfo || !frameRef.current) return;
+    if (phase !== 'playing' || !gameInfo || !frameRef.current) return;
     const frame = frameRef.current;
+    let cancelled = false;
 
-    // Show badge only when saves were actually injected (lastSnapRef reflects injected state)
-    if (lastSnapRef.current !== '{}') {
-      setSyncState('restored');
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'restored' ? '' : s), 2500);
-    }
+    (async () => {
+      // Restore the server's IndexedDB snapshot into the shared same-origin store
+      // BEFORE the game boots, so the game opens an already-populated database.
+      // Skipped for "play fresh".
+      if (restoreIdbRef.current) {
+        try {
+          await restoreIndexedDB(gameInfo.initial_saves.indexedDB);
+        } catch (e) {
+          console.error('[idb-sync] IndexedDB restore failed', e);
+        }
+        // Seed tracked names so the first capture can dump them even on Firefox.
+        for (const n of Object.keys(gameInfo.initial_saves.indexedDB)) {
+          trackedDbNamesRef.current.add(n);
+        }
+      }
+      if (cancelled || !frameRef.current) return;
 
-    frame.src = gameInfo.game_url;
-    const interval = autosaveEnabledRef.current
-      ? setInterval(() => syncSaves(), POLL_MS)
-      : null;
-    return () => { if (interval !== null) clearInterval(interval); };
-  }, [gameInfo, syncSaves]);
+      const hadSaves =
+        Object.keys(gameInfo.initial_saves.localStorage).length > 0 ||
+        Object.keys(gameInfo.initial_saves.indexedDB).length > 0;
+      if (restoreIdbRef.current && hadSaves) {
+        setSyncState('restored');
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSyncState(s => s === 'restored' ? '' : s), 2500);
+      }
+
+      frame.src = gameInfo.game_url;
+      // Start polling only after restore + launch, so a mid-restore snapshot can't
+      // overwrite the server copy with partial data.
+      if (autosaveEnabledRef.current) {
+        intervalRef.current = setInterval(() => syncSaves(), POLL_MS);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (intervalRef.current !== null) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    };
+  }, [phase, gameInfo, syncSaves]);
 
   // ── In-game navigation ──────────────────────────────────────────────────────
   const goBack    = () => frameRef.current?.contentWindow?.history.back();
@@ -165,12 +256,25 @@ export function GamePage() {
 
   // ── Start fresh when save injection failed ──────────────────────────────────
   const startNewGame = useCallback(() => {
+    restoreIdbRef.current = false; // don't restore IndexedDB over a fresh start
     lastSnapRef.current = '{}';
     const info = pendingInfoRef.current;
     pendingInfoRef.current = null;
     setRestoreError(null);
-    if (info) setGameInfo(info); // triggers gameInfo useEffect → starts game
+    if (info) { setGameInfo(info); setPhase('playing'); }
   }, []);
+
+  // ── Clear saves and launch from landing screen ───────────────────────────────
+  const clearAndPlay = useCallback(async () => {
+    const jwt = localStorage.getItem('twine_access_token');
+    localStorage.clear();
+    if (jwt) localStorage.setItem('twine_access_token', jwt);
+    // Wipe the game's known IndexedDB databases so "play fresh" is genuinely fresh.
+    if (gameInfo) await deleteIndexedDB(Object.keys(gameInfo.initial_saves.indexedDB));
+    restoreIdbRef.current = false;
+    lastSnapRef.current = '{}';
+    setPhase('playing');
+  }, [gameInfo]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (error) {
@@ -221,10 +325,100 @@ export function GamePage() {
     );
   }
 
-  if (!gameInfo) {
+  if (phase === 'loading') {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
         <Spinner size={28} color="var(--text-muted)" />
+      </div>
+    );
+  }
+
+  if (phase === 'landing' && gameInfo) {
+    const lsKeys = Object.keys(gameInfo.initial_saves.localStorage);
+    const idbDbs = Object.keys(gameInfo.initial_saves.indexedDB);
+    const hasSaves = lsKeys.length > 0 || idbDbs.length > 0;
+    return (
+      <div style={{
+        height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg)', gap: '2rem', padding: '2rem',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+            Ready to play
+          </p>
+          <h1 style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontWeight: 400, fontSize: '2rem', color: 'var(--text)', margin: 0 }}>
+            {gameInfo.game_name}
+          </h1>
+        </div>
+
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)', padding: '1.25rem 1.75rem',
+          width: '100%', maxWidth: 480,
+        }}>
+          <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 0.5rem' }}>
+            Save data
+          </p>
+          {hasSaves ? (
+            <>
+              <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.82rem', color: 'var(--text)', margin: '0 0 0.5rem' }}>
+                Last saved: {gameInfo.save_updated_at
+                  ? new Date(gameInfo.save_updated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+                  : '—'}
+              </p>
+              <SaveKeyChips data={gameInfo.initial_saves.localStorage} />
+              {idbDbs.length > 0 && (
+                <p style={{ fontFamily: 'var(--font-ui)', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  IndexedDB: {idbDbs.join(', ')}
+                </p>
+              )}
+            </>
+          ) : (
+            <p style={{ fontFamily: 'var(--font-body)', fontStyle: 'italic', fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>
+              No previous save — starting fresh.
+            </p>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button
+            onClick={() => setPhase('playing')}
+            style={{
+              fontFamily: 'var(--font-ui)', fontSize: '0.85rem', fontWeight: 500,
+              background: 'var(--accent)', color: 'var(--accent-text)',
+              border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+              padding: '0.55rem 1.75rem', cursor: 'pointer',
+              transition: 'opacity var(--transition)',
+            }}
+          >
+            Start Game
+          </button>
+          {hasSaves && (
+            <button
+              onClick={clearAndPlay}
+              style={{
+                fontFamily: 'var(--font-ui)', fontSize: '0.8rem',
+                background: 'transparent', color: 'var(--text-muted)',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                padding: '0.5rem 1.2rem', cursor: 'pointer',
+                transition: 'all var(--transition)',
+              }}
+            >
+              Play fresh
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              fontFamily: 'var(--font-ui)', fontSize: '0.8rem',
+              background: 'transparent', color: 'var(--text-muted)',
+              border: 'none', padding: '0.5rem 0.5rem', cursor: 'pointer',
+            }}
+          >
+            ← Back
+          </button>
+        </div>
       </div>
     );
   }
@@ -234,7 +428,7 @@ export function GamePage() {
       <iframe
         ref={frameRef}
         src="about:blank"
-        title={gameInfo.game_name}
+        title={gameInfo?.game_name ?? ''}
         sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
       />

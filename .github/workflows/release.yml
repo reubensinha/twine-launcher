@@ -1,19 +1,65 @@
 name: Release
 
+# When a pull request is merged into main: bump the version, build & push the Docker
+# image, build the Windows desktop installer, then commit the bump back to main, tag it,
+# and publish a GitHub Release with the installer attached.
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write # commit the version bump + push the tag + create the release
+  packages: write # push the image to GHCR
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  docker:
-    name: Build and push Docker image
+  # ── Compute the next version from the merged PR's labels ──────────────────────
+  version:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute next version
+        id: ver
+        env:
+          # Compact JSON array of the merged PR's label names, e.g. ["bug","minor"].
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          current="$(tr -d ' \t\r\n' < VERSION)"
+          IFS='.' read -r major minor patch <<< "$current"
+          if printf '%s' "$LABELS" | grep -q '"major"'; then
+            major=$((major + 1)); minor=0; patch=0
+          elif printf '%s' "$LABELS" | grep -q '"minor"'; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          version="${major}.${minor}.${patch}"
+          {
+            echo "version=${version}"
+            echo "tag=v${version}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Next version: ${version} (tag v${version})"
+
+  # ── Build & push the Docker image ─────────────────────────────────────────────
+  docker:
+    if: github.event.pull_request.merged == true
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply version
+        run: bash scripts/set_version.sh "${{ needs.version.outputs.version }}"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -28,25 +74,88 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ needs.version.outputs.tag }}
             ghcr.io/${{ github.repository }}:latest
 
-  release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  # ── Build the Windows desktop installer ───────────────────────────────────────
+  desktop:
+    if: github.event.pull_request.merged == true
+    needs: version
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Apply version
+        shell: bash
+        run: bash scripts/set_version.sh "${{ needs.version.outputs.version }}"
+
+      - uses: actions/setup-node@v4
         with:
-          generate_release_notes: true
-          body: |
-            ## Installation
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
 
-            **Docker** — see the [README](https://github.com/${{ github.repository }}#quick-start-docker) for docker compose instructions.
-            Image: `ghcr.io/${{ github.repository }}:${{ github.ref_name }}`
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+        working-directory: frontend
 
-            **Windows** — download the installer below and run it.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install backend + dev dependencies (PyInstaller)
+        run: uv sync --extra dev
+
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli
+
+      - name: Build desktop installer
+        run: uv run python build_desktop.py
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # ── Commit the bump, tag, and publish the release (only if both builds passed) ─
+  finalize:
+    if: github.event.pull_request.merged == true
+    needs: [version, docker, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync version, commit, and tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          bash scripts/set_version.sh "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION pyproject.toml frontend/package.json \
+            desktop/src-tauri/tauri.conf.json desktop/src-tauri/Cargo.toml
+          git commit -m "chore(release): ${TAG} [skip ci]"
+          git tag "$TAG"
+          git push origin HEAD:main
+          git push origin "$TAG"
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist-installer
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release create "$TAG" --title "$TAG" --generate-notes dist-installer/*.exe
